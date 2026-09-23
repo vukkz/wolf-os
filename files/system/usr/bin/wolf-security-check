@@ -31,7 +31,9 @@ if [[ $image_ref == ostree-image-signed:* ]]; then
     pass "Signed image" "updates are verified with the Wolf OS signing key"
 else
     fail "Signed image" "${image_ref:-unknown}"
-    hint "sudo rpm-ostree rebase ostree-image-signed:docker://ghcr.io/vukkz/wolf-os:latest"
+    # strip the transport ("ostree-unverified-registry:" etc.) to get e.g. ghcr.io/vukkz/wolf-os-nvidia:latest
+    image=$(sed -E 's#^[^:]+:(docker://)?##' <<<"$image_ref")
+    hint "sudo rpm-ostree rebase ostree-image-signed:docker://${image:-ghcr.io/vukkz/wolf-os:latest}"
 fi
 
 # --- SELinux ------------------------------------------------------------------

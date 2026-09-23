@@ -8,6 +8,17 @@ Built on Fedora Atomic 44 (KDE Plasma) with [BlueBuild](https://blue-build.org).
 - **Wolf Lab:** Kali's top hacking tools in a container (`ujust lab`), not on your host system.
 - **Gaming when you want it:** `ujust setup-gaming` installs Steam, MangoHud and gamescope as sandboxed Flatpaks.
 
+## Pick your flavour
+
+Both are the same Wolf OS. The only difference is the graphics driver.
+
+| Image | For |
+|---|---|
+| `ghcr.io/vukkz/wolf-os` | AMD or Intel graphics, and virtual machines |
+| `ghcr.io/vukkz/wolf-os-nvidia` | NVIDIA graphics (GeForce/RTX). If Secure Boot is on, run `ujust enroll-secure-boot-key` after installing and reboot, or the NVIDIA driver isn't allowed to load |
+
+In the commands below, use `wolf-os-nvidia` instead of `wolf-os` if you have NVIDIA.
+
 ## Installation
 
 > [!WARNING]  

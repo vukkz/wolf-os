@@ -1,0 +1,50 @@
+---
+# yaml-language-server: $schema=https://schema.blue-build.org/module-list-v1.json
+# Everything Wolf OS adds on top of its base image. Shared by every flavour
+# (recipe.yml, recipe-nvidia.yml), so edit here and all of them change.
+modules:
+  - type: files
+    files:
+      - source: system
+        destination: / # copies files/system/* (* means everything inside it) into your image's root folder /
+
+  - type: dnf
+    repos:
+      copr:
+        - atim/starship
+    install:
+      packages:
+        - micro
+        - starship
+        - distrobox # runs the Wolf Lab container (ujust lab)
+        - jq # used by wolf-security-check
+        - usbguard # off by default, turned on with ujust toggle-usbguard
+        - gamemode # host daemon that Steam's gamemoderun talks to
+    remove:
+      packages:
+        # removing firefox (in favor of the flatpak, which is sandboxed)
+        # "firefox" is the main package, "firefox-langpacks" is a dependency
+        - firefox
+        - firefox-langpacks
+
+  - type: default-flatpaks
+    configurations:
+      - notify: true # Send notification after install/uninstall is finished (true/false)
+        scope: system
+        # If no repo information is specified, Flathub will be used by default
+        install: # system flatpaks we want all users to have and not remove
+          - org.mozilla.firefox
+          - com.github.tchx84.Flatseal # see and change what each app is allowed to access
+      - scope: user # Also add Flathub user repo, but no user packages
+
+  - type: script
+    scripts:
+      - branding.sh
+      - firewall.sh
+      - fix-permissions.sh
+
+  - type: justfiles
+    include:
+      - wolf.just
+
+  - type: signing # this sets up the proper policy & signing files for signed images to work fully

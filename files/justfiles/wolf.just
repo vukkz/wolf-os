@@ -66,9 +66,14 @@ lab mode="":
         echo "Creating $name from $image (the first time downloads a few GB)..."
         mkdir -p "$lab_home"
         distrobox create "${root[@]}" --yes --pull --name "$name" --image "$image" --home "$lab_home"
-        distrobox enter "${root[@]}" "$name" -- distrobox-export --app "$app" || true
+        if distrobox enter "${root[@]}" "$name" -- distrobox-export --app "$app" >/dev/null 2>&1; then
+            echo "Added $app to your app menu."
+        else
+            echo "Couldn't add $app to the app menu. It still works: run '$app' inside the lab."
+        fi
     fi
-    distrobox enter "${root[@]}" "$name"
+    # --no-workdir: start in the lab's home, not whatever folder ujust was run from
+    distrobox enter "${root[@]}" --no-workdir "$name"
 
 # Delete a Wolf Lab container so the next "ujust lab" starts fresh from the newest image
 [group('Wolf OS')]

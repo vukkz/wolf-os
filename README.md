@@ -1,8 +1,12 @@
 # wolf-os &nbsp; [![bluebuild build badge](https://github.com/vukkz/wolf-os/actions/workflows/build.yml/badge.svg)](https://github.com/vukkz/wolf-os/actions/workflows/build.yml)
 
-See the [BlueBuild docs](https://blue-build.org/how-to/setup/) for quick setup instructions for setting up your own repository based on this template.
+A hardened, rollback-safe everyday desktop with an isolated hacking lab.
+Built on Fedora Atomic 44 (KDE Plasma) with [BlueBuild](https://blue-build.org).
 
-After setup, it is recommended you update this README to describe your custom image.
+- **Secure by default, without the pain:** firewall blocks incoming traffic, hardened kernel settings, signed updates. Every setting and its trade-off is in [SECURITY.md](SECURITY.md).
+- **Updates that can't brick you:** the whole system updates at once, and you can boot the previous version from the boot menu.
+- **Wolf Lab:** Kali's top hacking tools in a container (`ujust lab`), not on your host system.
+- **Gaming when you want it:** `ujust setup-gaming` installs Steam, MangoHud and gamescope as sandboxed Flatpaks.
 
 ## Installation
 
@@ -29,6 +33,18 @@ To rebase an existing atomic Fedora installation to the latest build:
   ```
 
 The `latest` tag will automatically point to the latest build. That build will still always use the Fedora version specified in `recipe.yml`, so you won't get accidentally updated to the next major version.
+
+## After installing
+
+```bash
+ujust harden-kargs      # once: kernel hardening boot arguments, then reboot
+ujust security-check    # see what's protected
+ujust lab               # enter the Wolf Lab (first time downloads a few GB)
+ujust setup-gaming      # optional: Steam + MangoHud + gamescope
+ujust toggle-usbguard   # optional: block unknown USB devices
+```
+
+Run `ujust` on its own to see every command.
 
 ## ISO
 

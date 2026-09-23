@@ -1,0 +1,68 @@
+name: build-lab
+on:
+  schedule:
+    - cron: "30 6 * * 1" # every Monday, to pick up new Kali tool versions
+  push:
+    branches: [main]
+    paths:
+      - "lab/**"
+      - ".github/workflows/build-lab.yml"
+  pull_request:
+    paths:
+      - "lab/**"
+      - ".github/workflows/build-lab.yml"
+  workflow_dispatch: # allow manually triggering builds
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/wolf-os-lab
+
+jobs:
+  build:
+    name: Build Wolf Lab
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - name: Free disk space # the Kali tools are several GB
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: lab
+          file: lab/Containerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.run_number }}
+
+      - name: Install cosign
+        if: github.event_name != 'pull_request'
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign image # same key as the OS image (cosign.pub in the repo root)
+        if: github.event_name != 'pull_request'
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.SIGNING_SECRET }}
+          COSIGN_PASSWORD: ""
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes --key env://COSIGN_PRIVATE_KEY "${IMAGE}@${DIGEST}"

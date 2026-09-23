@@ -1,0 +1,37 @@
+name: check
+# Fast sanity checks, so a typo doesn't ship in an image and break ujust.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint scripts and justfiles
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+
+      - name: Justfiles parse
+        run: |
+          for f in files/justfiles/*.just; do
+            echo "== $f"
+            just --justfile "$f" --summary
+          done
+
+      - name: Shell scripts pass shellcheck
+        run: shellcheck -S warning files/scripts/*.sh files/system/usr/bin/*
+
+      - name: No Windows line endings
+        run: |
+          if grep -rlI $'\r' files lab recipes; then
+            echo "::error::The files above have CRLF line endings"
+            exit 1
+          fi

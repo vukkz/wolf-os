@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<zone>
+  <short>Wolf</short>
+  <description>Wolf OS default. Blocks every incoming connection except DHCPv6 (getting an IPv6 address) and mDNS (finding printers and devices on your local network). Outgoing traffic is not restricted. Open more with: sudo firewall-cmd --permanent --add-service=NAME and sudo firewall-cmd --reload</description>
+  <service name="dhcpv6-client"/>
+  <service name="mdns"/>
+</zone>

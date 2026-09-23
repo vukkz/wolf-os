@@ -1,0 +1,20 @@
+# Wolf Lab: Kali Linux hacking tools, kept off the host system.
+# Built and signed by .github/workflows/build-lab.yml, entered with `ujust lab`.
+FROM docker.io/kalilinux/kali-rolling:latest
+
+LABEL org.opencontainers.image.source="https://github.com/vukkz/wolf-os" \
+      org.opencontainers.image.description="Wolf OS Lab: Kali Linux tools for distrobox" \
+      org.opencontainers.image.licenses="Apache-2.0"
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# kali-tools-top10: nmap, metasploit, burpsuite, wireshark, sqlmap, hydra, john,
+# aircrack-ng, netexec, responder. The second line is what distrobox needs, so the
+# first entry doesn't have to download it.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        kali-tools-top10 \
+        sudo passwd procps less curl wget bash-completion libnss-myhostname \
+        iproute2 iputils-ping dnsutils git nano ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*

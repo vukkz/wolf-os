@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+# wolf-security-check: shows how locked-down this Wolf OS install is.
+# Read-only: it never changes anything. Run it with `ujust security-check`.
+
+set -uo pipefail
+
+if [[ -t 1 ]]; then
+    G=$'\e[32m' R=$'\e[31m' Y=$'\e[33m' B=$'\e[1m' D=$'\e[2m' N=$'\e[0m'
+else
+    G='' R='' Y='' B='' D='' N=''
+fi
+
+passed=0
+total=0
+
+pass() { printf '  %s✔%s %-20s %s\n' "$G" "$N" "$1" "$2"; passed=$((passed + 1)); total=$((total + 1)); }
+fail() { printf '  %s✘%s %-20s %s\n' "$R" "$N" "$1" "$2"; total=$((total + 1)); }
+# optional checks are shown but don't count towards the score
+opt_on()  { printf '  %s✔%s %-20s %s\n' "$G" "$N" "$1" "$2"; }
+opt_off() { printf '  %s•%s %-20s %s\n' "$Y" "$N" "$1" "$2"; }
+hint() { printf '      %s↳ %s%s\n' "$D" "$1" "$N"; }
+
+printf '\n  %sWolf OS security check%s\n\n' "$B" "$N"
+
+status_json=$(rpm-ostree status --json 2>/dev/null || echo '{}')
+booted() { jq -r ".deployments[]? | select(.booted) | $1 // empty" <<<"$status_json"; }
+
+# --- Updates are signed -------------------------------------------------------
+image_ref=$(booted '."container-image-reference"')
+if [[ $image_ref == ostree-image-signed:* ]]; then
+    pass "Signed image" "updates are verified with the Wolf OS signing key"
+else
+    fail "Signed image" "${image_ref:-unknown}"
+    hint "sudo rpm-ostree rebase ostree-image-signed:docker://ghcr.io/vukkz/wolf-os:latest"
+fi
+
+# --- SELinux ------------------------------------------------------------------
+selinux=$(getenforce 2>/dev/null || echo "missing")
+if [[ $selinux == Enforcing ]]; then
+    pass "SELinux" "enforcing"
+else
+    fail "SELinux" "$selinux"
+    hint "sudo setenforce 1, then set SELINUX=enforcing in /etc/selinux/config"
+fi
+
+# --- Secure Boot ----------------------------------------------------------------
+sb_var=/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c
+if [[ ! -d /sys/firmware/efi ]]; then
+    fail "Secure Boot" "not possible: booted in legacy BIOS mode"
+elif [[ -r $sb_var && $(od -An -tu1 -j4 -N1 "$sb_var" | tr -d ' ') == 1 ]]; then
+    pass "Secure Boot" "enabled"
+else
+    fail "Secure Boot" "disabled"
+    hint "run 'ujust enroll-secure-boot-key', then turn Secure Boot on in your firmware settings"
+fi
+
+# --- Disk encryption ------------------------------------------------------------
+root_src=$(findmnt -no SOURCE /sysroot 2>/dev/null || findmnt -no SOURCE / 2>/dev/null)
+root_src=${root_src%%\[*} # btrfs shows the subvolume as /dev/xyz[/root]
+if [[ -n $root_src ]] && lsblk -rsno TYPE "$root_src" 2>/dev/null | grep -qx crypt; then
+    pass "Disk encryption" "system disk is encrypted (LUKS)"
+else
+    fail "Disk encryption" "system disk is NOT encrypted"
+    hint "only fixable by reinstalling with 'Encrypt my data' checked"
+fi
+
+# --- Firewall -------------------------------------------------------------------
+if systemctl is-active --quiet firewalld; then
+    zone=$(sed -n 's/^DefaultZone=//p' /etc/firewalld/firewalld.conf 2>/dev/null)
+    [[ -n $zone ]] || zone=$(firewall-cmd --get-default-zone 2>/dev/null)
+    case $zone in
+        wolf | block | drop) pass "Firewall" "on, incoming blocked (zone: $zone)" ;;
+        *)
+            fail "Firewall" "on, but zone '${zone:-unknown}' lets more traffic in"
+            hint "sudo firewall-cmd --set-default-zone=wolf"
+            ;;
+    esac
+else
+    fail "Firewall" "firewalld is not running"
+    hint "sudo systemctl enable --now firewalld"
+fi
+
+# --- Kernel settings (sysctl) ----------------------------------------------------
+if [[ $(</proc/sys/kernel/kptr_restrict) == 2 && $(</proc/sys/kernel/dmesg_restrict) == 1 &&
+    $(</proc/sys/kernel/yama/ptrace_scope) -ge 1 ]]; then
+    pass "Kernel settings" "hardened (sysctl)"
+else
+    fail "Kernel settings" "hardening sysctls are not active"
+    hint "check /etc/sysctl.d for files overriding 90-wolf-hardening.conf"
+fi
+
+# --- Kernel boot arguments -------------------------------------------------------
+cmdline=" $(</proc/cmdline) "
+missing=()
+while read -r arg; do
+    [[ -z $arg ]] && continue
+    [[ $cmdline == *" $arg "* ]] || missing+=("$arg")
+done </usr/share/wolf-os/kargs
+if ((${#missing[@]} == 0)); then
+    pass "Kernel boot args" "hardened"
+else
+    fail "Kernel boot args" "missing: ${missing[*]}"
+    hint "ujust harden-kargs (then reboot)"
+fi
+
+# --- Hacking tools stay in the lab -----------------------------------------------
+found=()
+for tool in nmap msfconsole sqlmap hydra aircrack-ng john; do
+    command -v "$tool" >/dev/null 2>&1 && found+=("$tool")
+done
+if ((${#found[@]} == 0)); then
+    pass "Host stays clean" "no attack tools outside the lab"
+else
+    fail "Host stays clean" "found on the host: ${found[*]}"
+    hint "use them from 'ujust lab' instead"
+fi
+
+# --- Automatic updates ---------------------------------------------------------
+update_timer=""
+for timer in uupd.timer ublue-update.timer rpm-ostreed-automatic.timer; do
+    if systemctl is-enabled --quiet "$timer" 2>/dev/null; then
+        update_timer=$timer
+        break
+    fi
+done
+built=$(booted '.timestamp')
+age_days=$(((${EPOCHSECONDS:-$(date +%s)} - ${built:-0}) / 86400))
+if [[ -z $update_timer ]]; then
+    fail "Updates" "automatic updates are off"
+    hint "ujust update, and re-enable the update timer"
+elif [[ -z $built ]]; then
+    fail "Updates" "couldn't read the build date"
+elif ((age_days > 14)); then
+    fail "Updates" "running a build from $age_days days ago"
+    hint "ujust update, then reboot"
+else
+    pass "Updates" "automatic, current build is $age_days day(s) old"
+fi
+if jq -e '.deployments[]? | select(.staged == true)' <<<"$status_json" >/dev/null 2>&1; then
+    hint "an update is downloaded: reboot to apply it"
+fi
+
+# --- Optional extras -----------------------------------------------------------
+if systemctl is-active --quiet usbguard; then
+    opt_on "USBGuard" "on, new USB devices are blocked until allowed"
+else
+    opt_off "USBGuard" "off (optional: ujust toggle-usbguard)"
+fi
+
+# --- Score -----------------------------------------------------------------------
+if ((passed == total)); then
+    colour=$G
+elif ((passed * 10 >= total * 7)); then
+    colour=$Y
+else
+    colour=$R
+fi
+printf '\n  %sScore: %s%d/%d%s\n\n' "$B" "$colour" "$passed" "$total" "$N"

@@ -1,0 +1,9 @@
+# Wolf OS defaults. These only apply until you change them in System Settings.
+[General]
+ColorScheme=WolfOS
+
+[Icons]
+Theme=breeze-dark
+
+[KDE]
+LookAndFeelPackage=org.fedoraproject.fedoradark.desktop

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Wolf OS look
+Comment=Applies the Wolf OS colours once per user
+Exec=/usr/libexec/wolf-os-look
+OnlyShowIn=KDE;
+NoDisplay=true
+X-KDE-autostart-phase=2

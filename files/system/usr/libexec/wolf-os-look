@@ -1,0 +1,24 @@
+#!/usr/bin/bash
+# Applies the Wolf OS look once per user, at login (started by /etc/xdg/autostart/wolf-os-look.desktop).
+# Only touches settings that are still at their defaults, so anything you picked yourself stays.
+set -u
+
+config=${XDG_CONFIG_HOME:-$HOME/.config}
+done_flag="$config/wolf-os/look-v1"
+[[ -e $done_flag ]] && exit 0
+
+# Read the user's own files only (not the system defaults), to see what they changed
+user_value() { kreadconfig6 --file "$config/$1" --group "$2" --key "$3" 2>/dev/null; }
+
+case $(user_value kdeglobals General ColorScheme) in
+    "" | BreezeLight | BreezeClassic | BreezeDark) plasma-apply-colorscheme WolfOS ;;
+esac
+
+case $(user_value ksplashrc KSplash Theme) in
+    "" | org.kde.breeze.desktop | org.fedoraproject.*)
+        kwriteconfig6 --file ksplashrc --group KSplash --key Engine none
+        kwriteconfig6 --file ksplashrc --group KSplash --key Theme None
+        ;;
+esac
+
+mkdir -p "${done_flag%/*}" && touch "$done_flag"

@@ -1,0 +1,56 @@
+# Wolf OS terminal prompt (https://starship.rs).
+# To customise it, copy this file to ~/.config/starship.toml and edit that copy.
+# To turn it off: ujust toggle-prompt
+# Only plain Unicode symbols are used, so no special "Nerd Font" is needed.
+"$schema" = "https://starship.rs/config-schema.json"
+
+add_newline = true
+format = """
+$username$hostname$directory$git_branch$git_status$python$nodejs$rust$cmd_duration
+$character"""
+
+[username]
+format = "[$user]($style) "
+style_user = "bold #8BE0FF"
+style_root = "bold #FF5C7A"
+
+[hostname]
+ssh_only = true
+format = "on [$hostname]($style) "
+style = "#9FB3C8"
+
+[directory]
+style = "bold #33B5F0"
+truncation_length = 3
+truncation_symbol = "…/"
+read_only = " [read-only]"
+read_only_style = "#FF5C7A"
+
+[git_branch]
+format = "on [$branch]($style) "
+style = "#8BE0FF"
+
+[git_status]
+format = '([\[$all_status$ahead_behind\]]($style) )'
+style = "#FF7A90"
+
+[python]
+format = "[py $version]($style) "
+style = "#9FB3C8"
+
+[nodejs]
+format = "[node $version]($style) "
+style = "#9FB3C8"
+
+[rust]
+format = "[rust $version]($style) "
+style = "#9FB3C8"
+
+[cmd_duration]
+min_time = 2_000
+format = "took [$duration]($style) "
+style = "#9FB3C8"
+
+[character]
+success_symbol = "[❯](bold #33B5F0)"
+error_symbol = "[❯](bold #FF5C7A)"

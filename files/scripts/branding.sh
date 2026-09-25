@@ -20,5 +20,6 @@ set_field PRETTY_NAME "Wolf OS ${version}"
 set_field HOME_URL "https://github.com/vukkz/wolf-os"
 set_field BUG_REPORT_URL "https://github.com/vukkz/wolf-os/issues"
 set_field DEFAULT_HOSTNAME "wolf-os"
+set_field LOGO "wolf-os-logo" # icon installed by look.sh
 
 cat "$file"

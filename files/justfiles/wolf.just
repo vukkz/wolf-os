@@ -5,6 +5,21 @@
 security-check:
     @/usr/bin/wolf-security-check
 
+# Turn the Wolf OS terminal prompt on or off (takes effect in new terminals)
+[group('Wolf OS')]
+toggle-prompt:
+    #!/usr/bin/bash
+    set -euo pipefail
+    flag="${XDG_CONFIG_HOME:-$HOME/.config}/wolf-os/prompt-off"
+    if [[ -e "$flag" ]]; then
+        rm "$flag"
+        echo "Wolf OS prompt is ON. Open a new terminal to see it."
+    else
+        mkdir -p "${flag%/*}"
+        touch "$flag"
+        echo "Wolf OS prompt is OFF. New terminals use the plain bash prompt."
+    fi
+
 # Add the Wolf OS kernel hardening boot arguments (reboot to apply)
 [group('Wolf OS')]
 harden-kargs:

@@ -1,0 +1,4 @@
+# Wolf OS: no splash screen after login. Change it in System Settings > Colors & Themes > Splash Screen.
+[KSplash]
+Engine=none
+Theme=None

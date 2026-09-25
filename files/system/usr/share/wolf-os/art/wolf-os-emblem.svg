@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="340" viewBox="0 0 400 340">
+  <g transform="translate(88,0) scale(0.875)">
+  <polygon points="58,26 100,80 46,104" fill="#8BE0FF" stroke="#0B1220" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="64,46 90,80 58,92" fill="#0F4C7A" stroke="#0B1220" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="100,80 128,70 128,122" fill="#CFF3FF" stroke="#0B1220" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="100,80 128,122 110,134 80,124" fill="#8BE0FF" stroke="#0B1220" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="46,104 100,80 80,124" fill="#33B5F0" stroke="#0B1220" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="46,104 80,124 36,142" fill="#1D7FC0" stroke="#0B1220" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="36,142 80,124 110,134 98,172 72,190" fill="#33B5F0" stroke="#0B1220" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="110,134 128,122 128,198 98,172" fill="#CFF3FF" stroke="#0B1220" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="72,190 98,172 128,198 128,238" fill="#8BE0FF" stroke="#0B1220" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="210,104 156,80 198,26" fill="#33B5F0" stroke="#0B1220" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="198,92 166,80 192,46" fill="#0A2F4F" stroke="#0B1220" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="128,122 128,70 156,80" fill="#8BE0FF" stroke="#0B1220" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="176,124 146,134 128,122 156,80" fill="#33B5F0" stroke="#0B1220" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="176,124 156,80 210,104" fill="#1D7FC0" stroke="#0B1220" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="220,142 176,124 210,104" fill="#0F4C7A" stroke="#0B1220" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="184,190 158,172 146,134 176,124 220,142" fill="#1D7FC0" stroke="#0B1220" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="158,172 128,198 128,122 146,134" fill="#8BE0FF" stroke="#0B1220" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="128,238 128,198 158,172 184,190" fill="#33B5F0" stroke="#0B1220" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="82,126 108,133 100,139 88,136" fill="#0B1220"/>
+  <polygon points="168,136 156,139 148,133 174,126" fill="#0B1220"/>
+  <polygon points="114,196 142,196 128,212" fill="#0B1220"/>
+  </g>
+  <text x="200" y="318" text-anchor="middle" font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="40" font-weight="300" letter-spacing="14" fill="#DDF4FF">WOLF OS</text>
+</svg>

@@ -27,7 +27,12 @@ jobs:
           done
 
       - name: Shell scripts pass shellcheck
-        run: shellcheck -S warning files/scripts/*.sh files/system/usr/bin/*
+        run: shellcheck -S warning files/scripts/*.sh files/system/usr/bin/* files/system/usr/libexec/* files/system/etc/profile.d/*.sh
+
+      - name: Artwork is up to date with art/generate.mjs
+        run: |
+          node art/generate.mjs
+          git diff --exit-code -- files/system/usr/share/wolf-os/art files/system/usr/share/wolf-os/fastfetch-logo.txt art/preview.html
 
       - name: No Windows line endings
         run: |

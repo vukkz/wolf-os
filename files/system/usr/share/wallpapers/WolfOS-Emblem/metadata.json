@@ -1,0 +1,8 @@
+{
+    "KPlugin": {
+        "Authors": [{ "Name": "Wolf OS" }],
+        "Id": "WolfOS-Emblem",
+        "License": "Apache-2.0",
+        "Name": "Wolf OS Emblem"
+    }
+}

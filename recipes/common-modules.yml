@@ -20,6 +20,8 @@ modules:
         - jq # used by wolf-security-check
         - usbguard # off by default, turned on with ujust toggle-usbguard
         - gamemode # host daemon that Steam's gamemoderun talks to
+        - fastfetch # system info with the wolf logo
+        - librsvg2-tools # rsvg-convert, turns the SVG artwork into PNGs in look.sh
     remove:
       packages:
         # removing firefox (in favor of the flatpak, which is sandboxed)
@@ -41,10 +43,15 @@ modules:
     scripts:
       - branding.sh
       - firewall.sh
+      - look.sh
       - fix-permissions.sh
 
   - type: justfiles
     include:
       - wolf.just
+
+  # Rebuild the boot image so it contains the Wolf OS boot screen and the module
+  # blacklist. Keep this near the end so it includes everything above.
+  - type: initramfs
 
   - type: signing # this sets up the proper policy & signing files for signed images to work fully

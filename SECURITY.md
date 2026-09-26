@@ -87,6 +87,60 @@ When it's on, only the USB devices plugged in when you turned it on are allowed.
 A malicious USB stick pretending to be a keyboard gets blocked. It's off by default
 because it's easy to lock yourself out of a new keyboard.
 
+## Network trust: `wolf net`
+
+Every Wi-Fi or wired network has a trust level. The first time you connect to one,
+Wolf OS picks a safe default and sends a notification:
+- **New Wi-Fi networks are public** (you might be in a café).
+- **New wired networks are home.**
+
+Change it any time with `wolf net home` or `wolf net public`. The file behind this
+is `files/system/usr/lib/NetworkManager/dispatcher.d/90-wolf-network-trust`.
+
+| | Home (zone `wolf`) | Public (zone `wolf-public`) |
+|---|---|---|
+| Incoming connections | Blocked, except device discovery (mDNS) | **All silently dropped**, including pings. Scanners see nothing |
+| Announce this PC's name on the network (mDNS/LLMNR) | Yes | No |
+| Send your hostname to the router (DHCP) | Yes | No |
+| Wi-Fi MAC address | Stable for this network | **New random one every time you connect** |
+
+**Can break on public networks:** casting to a TV, network printers and KDE Connect,
+because they rely on devices finding each other. That's the point on a network you
+don't control. Use `wolf net home` on networks you trust.
+
+## Game Mode: `wolf game on`
+
+A temporary mode for playing. **Everything it changes resets at reboot or with `wolf game off`.**
+- Opens Steam Remote Play and Steam LAN game transfer (firewalld services `steam-streaming`,
+  `steam-lan-transfer`), but **only on home networks**. On public networks they stay closed.
+- Pauses automatic updates, so they don't take bandwidth or CPU mid-game.
+- Switches to the *performance* power profile.
+
+## Security levels: `wolf level`
+
+One switch that moves a bundle of settings together. It stays until you change it.
+The files are in `files/system/usr/share/wolf-os/levels/`.
+
+| | gaming | balanced (default) | paranoid |
+|---|---|---|---|
+| Everything above in this file | ✔ | ✔ | ✔ |
+| Steam Remote Play/LAN ports on home networks | Always open | Only in Game Mode | Only in Game Mode |
+| Split-lock slowdown (`kernel.split_lock_mitigate`) | Off, as on SteamOS: fixes stutter in a few games | On | On |
+| Encrypted DNS: every lookup goes to Quad9 over TLS, ignoring the network's DNS | | | ✔ |
+| Reply to pings | Yes | Yes | No |
+| io_uring, a kernel I/O interface with many past exploits | On | On | Off |
+| Magic SysRq keyboard shortcuts | Sync only | Sync only | Off |
+| TCP timestamps, which reveal uptime | On | On | Off |
+| Wipe freed memory (`init_on_free=1`, needs a reboot) | | | ✔ |
+| USBGuard | Your choice | Your choice | On |
+
+**Paranoid breaks some things:**
+- Wi-Fi login pages (hotels, airports, trains) don't load, because DNS only goes to
+  Quad9. Switch to `balanced`, log in, then switch back.
+- A few apps that use io_uring can fail.
+- Split-lock mitigation only exists on CPUs that detect split locks (mostly Intel).
+  On other CPUs, that setting does nothing.
+
 ## Wolf Lab: `ujust lab`
 
 The Kali tools live in a container (`lab/Containerfile`), not on the host. Here's

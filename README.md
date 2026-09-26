@@ -6,7 +6,8 @@ Built on Fedora Atomic 44 (KDE Plasma) with [BlueBuild](https://blue-build.org).
 - **Secure by default, without the pain:** firewall blocks incoming traffic, hardened kernel settings, signed updates. Every setting and its trade-off is in [SECURITY.md](SECURITY.md).
 - **Updates that can't brick you:** the whole system updates at once, and you can boot the previous version from the boot menu.
 - **Wolf Lab:** Kali's top hacking tools in a container (`ujust lab`), not on your host system.
-- **Gaming when you want it:** `ujust setup-gaming` installs Steam, MangoHud and gamescope as sandboxed Flatpaks.
+- **Networks that know who to trust:** new Wi-Fi networks are treated as public (invisible to other devices, random MAC address), and your home network as trusted. `wolf net` switches between them.
+- **Gaming and security in one OS:** `ujust setup-gaming` installs Steam, Heroic, Lutris and ProtonUp-Qt. `wolf game on` opens Remote Play ports and pauses updates while you play. `wolf level gaming|balanced|paranoid` changes a whole bundle of protections at once.
 
 ## The look
 
@@ -61,13 +62,20 @@ The `latest` tag will automatically point to the latest build. That build will s
 
 ```bash
 ujust harden-kargs      # once: kernel hardening boot arguments, then reboot
-ujust security-check    # see what's protected
+wolf check              # see what's protected
 ujust lab               # enter the Wolf Lab (first time downloads a few GB)
-ujust setup-gaming      # optional: Steam + MangoHud + gamescope
-ujust toggle-usbguard   # optional: block unknown USB devices
+ujust setup-gaming      # optional: Steam, Heroic, Lutris, ProtonUp-Qt, MangoHud, gamescope
 ```
 
-Run `ujust` on its own to see every command.
+Day to day, the `wolf` command does the rest:
+
+```bash
+wolf net public         # on a network you don't trust (new Wi-Fi networks start as public)
+wolf game on            # before playing; wolf game off afterwards
+wolf level paranoid     # or gaming / balanced
+```
+
+Run `wolf help` or `ujust` to see every command.
 
 ## ISO
 

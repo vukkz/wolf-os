@@ -143,6 +143,25 @@ if jq -e '.deployments[]? | select(.staged == true)' <<<"$status_json" >/dev/nul
 fi
 
 # --- Optional extras -----------------------------------------------------------
+opt_off "Security level" "$(cat /etc/wolf-os/security-level 2>/dev/null || echo balanced) (change: wolf level)"
+
+net_zone=""
+while IFS=: read -r _ type device; do
+    [[ $type == 802-11-wireless || $type == 802-3-ethernet ]] || continue
+    net_zone=$(nmcli -g connection.zone connection show "$(nmcli -g GENERAL.CON-UUID device show "$device")" 2>/dev/null)
+    break
+done < <(nmcli -t -f UUID,TYPE,DEVICE connection show --active 2>/dev/null)
+case $net_zone in
+    wolf-public) opt_on "Network trust" "public: invisible to other devices here" ;;
+    wolf) opt_off "Network trust" "home (trusted). On public Wi-Fi: wolf net public" ;;
+    "") opt_off "Network trust" "not set, treated as home (change: wolf net)" ;;
+    *) opt_off "Network trust" "custom zone: $net_zone" ;;
+esac
+
+if [[ -e /run/wolf-os/game-mode ]]; then
+    opt_off "Game Mode" "ON: Steam ports open, updates paused (wolf game off)"
+fi
+
 if systemctl is-active --quiet usbguard; then
     opt_on "USBGuard" "on, new USB devices are blocked until allowed"
 else

@@ -1,0 +1,6 @@
+#!/usr/bin/bash
+# Wolf OS network trust: the first time you connect to a network, give it a trust level
+# (Wi-Fi = public, wired = home) and tell the user. See `wolf net`.
+# NetworkManager runs this as root with: $1 = interface, $2 = action.
+[[ ${2:-} == up && -n ${CONNECTION_UUID:-} ]] || exit 0
+exec /usr/bin/wolf _classify "$CONNECTION_UUID" "$1"

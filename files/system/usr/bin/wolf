@@ -1,0 +1,349 @@
+#!/usr/bin/env bash
+# wolf: the Wolf OS control tool. Run `wolf help` for the commands.
+set -euo pipefail
+
+LEVEL_FILE=/etc/wolf-os/security-level # persistent
+LEVELS=/usr/share/wolf-os/levels
+GAME_STATE=/run/wolf-os/game-mode # /run is cleared at reboot, like Game Mode's firewall changes
+STEAM_SERVICES=(steam-streaming steam-lan-transfer)
+UPDATE_TIMERS=(uupd.timer ublue-update.timer rpm-ostreed-automatic.timer flatpak-system-update.timer)
+
+if [[ -t 1 ]]; then
+    G=$'\e[32m' Y=$'\e[33m' B=$'\e[1m' D=$'\e[2m' C=$'\e[38;2;51;181;240m' N=$'\e[0m'
+else
+    G='' Y='' B='' D='' C='' N=''
+fi
+
+die() { printf '%s\n' "$*" >&2; exit 1; }
+as_root() { if ((EUID == 0)); then "$@"; else sudo "$@"; fi; }
+ask() { local reply; read -r -p "$1 [y/N] " reply; [[ $reply == [yY]* ]]; }
+
+# ---------------------------------------------------------------------------------------
+# Networks
+# ---------------------------------------------------------------------------------------
+
+# UUID of the Wi-Fi or wired connection the internet goes through (VPNs and bridges ignored)
+primary_connection() {
+    local default_dev uuid type device first=""
+    default_dev=$(ip -o route show default 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "dev") { print $(i + 1); exit }}')
+    while IFS=: read -r uuid type device; do
+        [[ $type == 802-11-wireless || $type == 802-3-ethernet ]] || continue
+        if [[ $device == "$default_dev" ]]; then
+            echo "$uuid"
+            return 0
+        fi
+        [[ -n $first ]] || first=$uuid
+    done < <(nmcli -t -f UUID,TYPE,DEVICE connection show --active 2>/dev/null)
+    [[ -n $first ]] && echo "$first"
+}
+
+con_get() { nmcli -g "$2" connection show "$1" 2>/dev/null; }
+
+trust_of_zone() {
+    case $1 in
+        wolf) echo home ;;
+        wolf-public) echo public ;;
+        "") echo "not set (treated as home)" ;;
+        *) echo "custom (firewall zone: $1)" ;;
+    esac
+}
+
+# Settings for each trust level. Home undoes everything public changes.
+set_trust() { # <uuid> <home|public> [reconnect]
+    local uuid=$1 level=$2 reconnect=${3:-yes} type args
+    type=$(con_get "$uuid" connection.type)
+    if [[ $level == public ]]; then
+        # drop all incoming, no local name announcements, don't tell the network our hostname
+        args=(connection.zone wolf-public connection.mdns no connection.llmnr no
+            ipv4.dhcp-send-hostname no ipv6.dhcp-send-hostname no)
+        # a new random MAC address every time we connect, so even this network can't track us
+        if [[ $type == 802-11-wireless ]]; then args+=(wifi.cloned-mac-address random); fi
+    else
+        args=(connection.zone wolf connection.mdns default connection.llmnr default
+            ipv4.dhcp-send-hostname yes ipv6.dhcp-send-hostname yes)
+        if [[ $type == 802-11-wireless ]]; then args+=(wifi.cloned-mac-address ""); fi
+    fi
+    as_root nmcli connection modify "$uuid" "${args[@]}"
+    if [[ $reconnect == yes ]]; then
+        as_root nmcli connection up "$uuid" >/dev/null # reconnect so every setting applies
+    fi
+}
+
+cmd_net() {
+    local uuid name zone
+    uuid=$(primary_connection) || true
+    [[ -n $uuid ]] || die "Not connected to a Wi-Fi or wired network."
+    name=$(con_get "$uuid" connection.id)
+    case ${1:-} in
+        "")
+            zone=$(con_get "$uuid" connection.zone)
+            printf '%sNetwork:%s %s\n%sTrust:%s   %s\n\n' "$B" "$N" "$name" "$B" "$N" "$(trust_of_zone "$zone")"
+            echo "  wolf net home     trusted network: devices here can find this PC (printers, casting)"
+            echo "  wolf net public   untrusted network: invisible to other devices, random MAC address"
+            ;;
+        home | trusted)
+            set_trust "$uuid" home
+            echo "${G}✔${N} '$name' is now trusted (home)."
+            ;;
+        public | untrusted)
+            set_trust "$uuid" public
+            echo "${G}✔${N} '$name' is now untrusted (public): this PC is invisible to other devices on it."
+            ;;
+        *) die "Usage: wolf net [home|public]" ;;
+    esac
+}
+
+# Tell everyone logged in to a desktop (used by the NetworkManager dispatcher, which runs as root)
+notify_desktop_users() { # <title> <body>
+    local session uid user type
+    while read -r session uid user _; do
+        type=$(loginctl show-session "$session" -p Type --value 2>/dev/null) || continue
+        [[ $type == wayland || $type == x11 ]] || continue
+        runuser -u "$user" -- env DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" \
+            notify-send -a "Wolf OS" -i network-wireless "$1" "$2" 2>/dev/null || true
+    done < <(loginctl list-sessions --no-legend 2>/dev/null)
+}
+
+# Called by /usr/lib/NetworkManager/dispatcher.d/90-wolf-network-trust when a network comes up.
+# The first time we meet a network, give it a trust level: Wi-Fi = public, wired = home.
+cmd_classify() { # <uuid> <device>
+    local uuid=$1 device=$2 zone type level name
+    zone=$(con_get "$uuid" connection.zone) || return 0
+    [[ -z $zone ]] || return 0 # already has a trust level, or a zone the user picked
+    type=$(con_get "$uuid" connection.type)
+    case $type in
+        802-11-wireless) level=public ;;
+        802-3-ethernet) level=home ;;
+        *) return 0 ;;
+    esac
+    name=$(con_get "$uuid" connection.id)
+    # Apply the firewall zone right away; the MAC and hostname settings apply from the next connect.
+    nmcli connection modify "$uuid" connection.zone "$([[ $level == public ]] && echo wolf-public || echo wolf)"
+    nmcli device reapply "$device" >/dev/null 2>&1 || true
+    set_trust "$uuid" "$level" no
+    if [[ $level == public ]]; then
+        notify_desktop_users "New network: $name" "Treated as PUBLIC: this PC is invisible to other devices on it. If this is your home network, run: wolf net home"
+    else
+        notify_desktop_users "New network: $name" "Treated as HOME (trusted). If it isn't yours, run: wolf net public"
+    fi
+}
+
+# ---------------------------------------------------------------------------------------
+# Game Mode (temporary: everything it changes resets at reboot)
+# ---------------------------------------------------------------------------------------
+
+power_profile() { # get | set <name>
+    if command -v powerprofilesctl >/dev/null; then
+        if [[ $1 == get ]]; then powerprofilesctl get; else powerprofilesctl set "$2"; fi
+    else
+        local obj=(net.hadess.PowerProfiles /net/hadess/PowerProfiles net.hadess.PowerProfiles ActiveProfile)
+        if [[ $1 == get ]]; then
+            busctl get-property "${obj[@]}" | awk '{gsub(/"/, "", $2); print $2}'
+        else
+            busctl set-property "${obj[@]}" s "$2"
+        fi
+    fi
+}
+
+game_zone() {
+    local uuid zone=""
+    uuid=$(primary_connection) || true
+    [[ -n $uuid ]] && zone=$(con_get "$uuid" connection.zone)
+    [[ -n $zone ]] || zone=$(as_root firewall-cmd --get-default-zone)
+    echo "$zone"
+}
+
+game_on() {
+    [[ -e $GAME_STATE ]] && { echo "Game Mode is already on. Turn it off with: wolf game off"; return 0; }
+    local zone opened="" paused=() previous=""
+    zone=$(game_zone)
+    if [[ $zone == wolf-public ]]; then
+        echo "${Y}•${N} Public network: Steam Remote Play and LAN ports stay closed."
+    else
+        local args=()
+        for s in "${STEAM_SERVICES[@]}"; do args+=("--add-service=$s"); done
+        as_root firewall-cmd --zone="$zone" "${args[@]}" >/dev/null
+        opened=$zone
+        echo "${G}✔${N} Opened Steam Remote Play and LAN game transfer (until Game Mode is off or reboot)"
+    fi
+    for t in "${UPDATE_TIMERS[@]}"; do
+        if systemctl is-active --quiet "$t"; then
+            as_root systemctl stop "$t"
+            paused+=("$t")
+        fi
+    done
+    echo "${G}✔${N} Paused automatic updates"
+    previous=$(power_profile get 2>/dev/null) || true
+    if power_profile set performance >/dev/null 2>&1; then
+        echo "${G}✔${N} Power profile: performance"
+    else
+        echo "${Y}•${N} This PC has no performance power profile (normal in virtual machines)"
+    fi
+    as_root mkdir -p "${GAME_STATE%/*}"
+    printf 'ZONE=%q\nTIMERS=%q\nPROFILE=%q\n' "$opened" "${paused[*]}" "$previous" | as_root tee "$GAME_STATE" >/dev/null
+    echo "${B}Game Mode is ON.${N} Turn it off with: wolf game off"
+}
+
+game_off() {
+    [[ -e $GAME_STATE ]] || { echo "Game Mode is already off."; return 0; }
+    local ZONE="" TIMERS="" PROFILE=""
+    # shellcheck disable=SC1090
+    source "$GAME_STATE"
+    if [[ -n $ZONE ]]; then
+        local args=()
+        for s in "${STEAM_SERVICES[@]}"; do
+            # keep ports the gaming security level opened permanently
+            as_root firewall-cmd --permanent --zone="$ZONE" --query-service="$s" >/dev/null 2>&1 || args+=("--remove-service=$s")
+        done
+        ((${#args[@]} == 0)) || as_root firewall-cmd --zone="$ZONE" "${args[@]}" >/dev/null
+        echo "${G}✔${N} Closed the Steam ports again"
+    fi
+    for t in $TIMERS; do as_root systemctl start "$t"; done
+    echo "${G}✔${N} Automatic updates resumed"
+    [[ -n $PROFILE ]] && power_profile set "$PROFILE" >/dev/null 2>&1 || true
+    as_root rm -f "$GAME_STATE"
+    echo "${B}Game Mode is OFF.${N}"
+}
+
+cmd_game() {
+    case ${1:-} in
+        "")
+            if [[ -e $GAME_STATE ]]; then echo "Game Mode is ON. Turn it off with: wolf game off"; else echo "Game Mode is OFF. Turn it on with: wolf game on"; fi
+            echo "${D}Game Mode opens Steam Remote Play/LAN ports (home networks only), pauses automatic updates"
+            echo "and switches to the performance power profile. Everything resets at reboot.${N}"
+            ;;
+        on) game_on ;;
+        off) game_off ;;
+        *) die "Usage: wolf game [on|off]" ;;
+    esac
+}
+
+# ---------------------------------------------------------------------------------------
+# Security levels (persistent)
+# ---------------------------------------------------------------------------------------
+
+current_level() { cat "$LEVEL_FILE" 2>/dev/null || echo balanced; }
+
+level_steam_ports() { # add | remove
+    local args=() perm
+    for s in "${STEAM_SERVICES[@]}"; do args+=("--$1-service=$s"); done
+    for perm in --permanent ""; do
+        # shellcheck disable=SC2086
+        as_root firewall-cmd $perm --zone=wolf "${args[@]}" >/dev/null 2>&1 || true
+    done
+}
+
+level_usbguard() { # on | off
+    if [[ $1 == on ]]; then
+        systemctl is-active --quiet usbguard && return 0
+        echo "Allowing every USB device that's plugged in right now, blocking any new ones."
+        as_root sh -c 'usbguard generate-policy > /etc/usbguard/rules.conf && chmod 0600 /etc/usbguard/rules.conf'
+        as_root systemctl enable --now usbguard
+        as_root touch /etc/wolf-os/usbguard-by-level
+    elif [[ -e /etc/wolf-os/usbguard-by-level ]]; then
+        as_root systemctl disable --now usbguard
+        as_root rm -f /etc/wolf-os/usbguard-by-level
+    fi
+}
+
+level_dns() { # on | off
+    if [[ $1 == on ]]; then
+        as_root mkdir -p /etc/systemd/resolved.conf.d
+        as_root ln -sfn "$LEVELS/paranoid/resolved.conf" /etc/systemd/resolved.conf.d/95-wolf-level.conf
+        as_root ln -sfn "$LEVELS/paranoid/networkmanager.conf" /etc/NetworkManager/conf.d/95-wolf-level.conf
+    else
+        as_root rm -f /etc/systemd/resolved.conf.d/95-wolf-level.conf /etc/NetworkManager/conf.d/95-wolf-level.conf
+    fi
+    as_root systemctl restart systemd-resolved
+    as_root systemctl reload NetworkManager
+}
+
+level_kargs() { # on | off: init_on_free=1 (wipes freed memory; costs a little speed)
+    local current
+    current=" $(rpm-ostree kargs) "
+    if [[ $1 == on && $current != *" init_on_free=1 "* ]]; then
+        as_root rpm-ostree kargs --append-if-missing=init_on_free=1 >/dev/null
+        echo "${Y}•${N} Kernel setting added: reboot to finish"
+    elif [[ $1 == off && $current == *" init_on_free=1 "* ]]; then
+        as_root rpm-ostree kargs --delete-if-present=init_on_free=1 >/dev/null
+        echo "${Y}•${N} Kernel setting removed: reboot to finish"
+    fi
+}
+
+describe_levels() {
+    cat <<EOF
+  ${C}gaming${N}     balanced, plus: Steam Remote Play/LAN ports stay open on home networks,
+             and no split-lock slowdown (fixes stutter in a few games)
+  ${C}balanced${N}   the Wolf OS default: everything in SECURITY.md
+  ${C}paranoid${N}   balanced, plus: encrypted DNS (Quad9), no replies to pings, io_uring and
+             SysRq off, no TCP timestamps, freed memory wiped, USBGuard on
+             ${Y}Breaks Wi-Fi login pages (hotels, airports) and apps that need io_uring.${N}
+EOF
+}
+
+cmd_level() {
+    local current new=${1:-}
+    current=$(current_level)
+    if [[ -z $new ]]; then
+        printf '%sSecurity level:%s %s\n\n' "$B" "$N" "$current"
+        describe_levels
+        echo
+        echo "Change it with: wolf level gaming|balanced|paranoid"
+        return 0
+    fi
+    [[ $new == gaming || $new == balanced || $new == paranoid ]] || die "Usage: wolf level [gaming|balanced|paranoid]"
+    [[ $new == "$current" ]] && { echo "Already on $new."; return 0; }
+    if [[ $new == paranoid ]]; then
+        echo "${Y}Paranoid mode:${N}"
+        echo "  - Wi-Fi networks with a login page (hotels, airports, trains) won't load it."
+        echo "    Switch to balanced, log in, then switch back."
+        echo "  - A few apps that need io_uring may fail. New USB devices are blocked until allowed."
+        ask "Turn on paranoid?" || { echo "Nothing changed."; return 0; }
+    fi
+
+    as_root mkdir -p /etc/wolf-os
+    as_root ln -sfn "$LEVELS/$new/sysctl.conf" /etc/sysctl.d/95-wolf-level.conf
+    as_root systemctl restart systemd-sysctl
+    echo "${G}✔${N} Kernel settings for $new applied"
+
+    if [[ $new == gaming ]]; then level_steam_ports add; echo "${G}✔${N} Steam ports open on home networks"; fi
+    if [[ $current == gaming ]]; then level_steam_ports remove; echo "${G}✔${N} Steam ports closed"; fi
+
+    if [[ $new == paranoid ]]; then
+        level_dns on && echo "${G}✔${N} Encrypted DNS on (Quad9)"
+        level_usbguard on && echo "${G}✔${N} USBGuard on"
+        level_kargs on
+    elif [[ $current == paranoid ]]; then
+        level_dns off && echo "${G}✔${N} Encrypted DNS off (using the network's DNS again)"
+        level_usbguard off
+        level_kargs off
+    fi
+
+    echo "$new" | as_root tee "$LEVEL_FILE" >/dev/null
+    echo "${B}Security level is now: $new${N}"
+}
+
+# ---------------------------------------------------------------------------------------
+
+usage() {
+    cat <<EOF
+${B}wolf${N}: the Wolf OS control tool
+
+  ${C}wolf check${N}                               how locked-down this system is
+  ${C}wolf net${N} [home|public]                   trust level of the network you're on
+  ${C}wolf game${N} [on|off]                       Game Mode (temporary, resets at reboot)
+  ${C}wolf level${N} [gaming|balanced|paranoid]    security level (stays until you change it)
+
+Run a command without the part in [brackets] to see its current state.
+EOF
+}
+
+case ${1:-help} in
+    check | status) exec /usr/bin/wolf-security-check ;;
+    net | network) shift; cmd_net "$@" ;;
+    game) shift; cmd_game "$@" ;;
+    level) shift; cmd_level "$@" ;;
+    _classify) shift; cmd_classify "$@" ;;
+    help | -h | --help) usage ;;
+    *) usage; exit 1 ;;
+esac

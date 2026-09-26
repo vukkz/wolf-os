@@ -27,7 +27,7 @@ jobs:
           done
 
       - name: Shell scripts pass shellcheck
-        run: shellcheck -S warning files/scripts/*.sh files/system/usr/bin/* files/system/usr/libexec/* files/system/etc/profile.d/*.sh
+        run: shellcheck -S warning files/scripts/*.sh files/system/usr/bin/* files/system/usr/libexec/* files/system/etc/profile.d/*.sh files/system/usr/lib/NetworkManager/dispatcher.d/*
 
       - name: Artwork is up to date with art/generate.mjs
         run: |

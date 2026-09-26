@@ -119,17 +119,45 @@ toggle-usbguard:
     echo "  sudo usbguard list-devices --blocked"
     echo "  sudo usbguard allow-device <number> -p    (-p remembers it)"
 
-# Install Steam with MangoHud and gamescope (Flatpak, sandboxed)
+# Install the gaming apps: Steam, Heroic (Epic/GOG/Amazon), Lutris, ProtonUp-Qt, MangoHud, gamescope (Flatpak, sandboxed)
 [group('Wolf OS')]
 setup-gaming:
     #!/usr/bin/bash
     set -euo pipefail
-    flatpak install --system --noninteractive flathub com.valvesoftware.Steam
+    echo "Installing Steam, Heroic, Lutris and ProtonUp-Qt (a few GB the first time)..."
+    flatpak install --system --noninteractive flathub \
+        com.valvesoftware.Steam \
+        com.heroicgameslauncher.hgl \
+        net.lutris.Lutris \
+        net.davidotek.pupgui2
     branch=$(flatpak info --system --show-runtime com.valvesoftware.Steam | cut -d/ -f3)
     flatpak install --system --noninteractive flathub \
         "org.freedesktop.Platform.VulkanLayer.MangoHud//${branch}" \
         "org.freedesktop.Platform.VulkanLayer.gamescope//${branch}" \
         || echo "Couldn't install MangoHud/gamescope for runtime ${branch}. Steam works without them."
     echo
-    echo "Done. Start Steam from the app menu."
-    echo "Tip, per game (Properties > Launch Options):  MANGOHUD=1 gamemoderun %command%"
+    echo "Done. You'll find them in the app menu:"
+    echo "  Steam         your Steam library; Proton runs Windows games"
+    echo "  Heroic        Epic Games, GOG and Amazon Prime games"
+    echo "  Lutris        everything else (Battle.net, EA app, Ubisoft Connect, emulators)"
+    echo "  ProtonUp-Qt   extra Proton versions (e.g. Proton-GE) that fix some games"
+    echo
+    echo "Tips:"
+    echo "  - Per game in Steam (Properties > Launch Options):  MANGOHUD=1 gamemoderun %command%"
+    echo "  - Before playing:  wolf game on   (Remote Play/LAN ports, pauses updates, performance mode)"
+    echo "  - Check a game works on Linux first: https://www.protondb.com"
+
+# Game Mode: open Steam Remote Play/LAN ports, pause updates, performance power profile. Resets at reboot
+[group('Wolf OS')]
+game-mode state="":
+    @/usr/bin/wolf game {{ state }}
+
+# Trust level of the network you're on: home (trusted) or public (invisible to other devices)
+[group('Wolf OS')]
+network-trust level="":
+    @/usr/bin/wolf net {{ level }}
+
+# Security level: gaming, balanced (default) or paranoid
+[group('Wolf OS')]
+security-level level="":
+    @/usr/bin/wolf level {{ level }}

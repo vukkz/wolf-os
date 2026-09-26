@@ -2,7 +2,7 @@
 _wolf() {
     local cur=${COMP_WORDS[COMP_CWORD]} words=""
     if ((COMP_CWORD == 1)); then
-        words="check level net kargs usbguard setup game lab fastfetch prompt help"
+        words="install remove search update check level net kargs usbguard setup game lab fastfetch prompt help"
     elif ((COMP_CWORD == 2)); then
         case ${COMP_WORDS[1]} in
             level) words="gaming wolf sheep" ;;

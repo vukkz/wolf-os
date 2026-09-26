@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+  "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!-- Lets the Wolf panel widget and Wolf Welcome run `wolf` as root through pkexec.
+     Asks for your password, then remembers it for a few minutes (auth_admin_keep). -->
+<policyconfig>
+  <vendor>Wolf OS</vendor>
+  <vendor_url>https://github.com/vukkz/wolf-os</vendor_url>
+  <action id="org.wolfos.wolf">
+    <description>Change Wolf OS settings</description>
+    <message>Wolf OS needs your password to change security, network or Game Mode settings</message>
+    <icon_name>wolf-os-logo</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/wolf</annotate>
+  </action>
+</policyconfig>

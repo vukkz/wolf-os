@@ -46,6 +46,7 @@ modules:
       - branding.sh
       - firewall.sh
       - look.sh
+      - debrand.sh
       - fix-permissions.sh
       - compat.sh
 

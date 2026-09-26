@@ -149,6 +149,26 @@ keys can't be read by an exploit. It costs a few percent of speed. Add it with
 - Split-lock mitigation only exists on CPUs that detect split locks (mostly Intel).
   On other CPUs, that setting does nothing.
 
+## The wolf panel widget and Wolf Welcome
+
+Both run `/usr/bin/wolf` as root through `pkexec`, so every change asks for your password.
+The polkit rule in `files/system/usr/share/polkit-1/actions/org.wolfos.wolf.policy`:
+- **Only covers `/usr/bin/wolf`,** which lives in the read-only system image and can't be swapped out.
+- **Remembers your password for a few minutes** (`auth_admin_keep`), so clicking through a few
+  settings doesn't ask every time.
+- **Only works for someone at the machine.** A remote or inactive session always has to type the password.
+
+Reading the current state (`wolf state`) needs no password and changes nothing.
+
+## Installing software: `wolf install`
+
+- **Apps come from Flathub** and run in Flatpak's sandbox. See or tighten each app's permissions in **Flatseal**.
+- **Command-line tools go into the `wolf-tools` box** (Arch Linux, packages signed by Arch).
+  Their commands are linked into `~/.local/bin`. Like the Lab, the box keeps them off the
+  system image, but it **is not a sandbox**: a tool in it can reach your files.
+- Nothing is ever installed into the system image itself. Use `rpm-ostree install` only
+  if something truly has to be part of the system, such as a driver.
+
 ## Wolf Lab: `wolf lab`
 
 The Kali tools live in a container (`lab/Containerfile`), not on the host. Here's

@@ -8,6 +8,8 @@ KARGS_FILE=/usr/share/wolf-os/kargs
 GAME_STATE=/run/wolf-os/game-mode # /run is cleared at reboot, like Game Mode's firewall changes
 USER_FLAGS=${XDG_CONFIG_HOME:-$HOME/.config}/wolf-os
 LAB_IMAGE=ghcr.io/vukkz/wolf-os-lab:latest
+TOOLS_BOX=wolf-tools # Arch Linux box that `wolf install` puts command-line tools in
+TOOLS_IMAGE=docker.io/library/archlinux:latest
 STEAM_SERVICES=(steam-streaming steam-lan-transfer)
 UPDATE_TIMERS=(uupd.timer ublue-update.timer rpm-ostreed-automatic.timer flatpak-system-update.timer)
 
@@ -298,8 +300,8 @@ Switching is instant and needs no reboot. Your rollback (the previous OS version
 EOF
 }
 
-cmd_level() {
-    local current new
+cmd_level() { # [level] [--yes]
+    local current new yes=${2:-}
     current=$(current_level)
     new=$(level_name "${1:-}")
     if [[ -z $new ]]; then
@@ -311,7 +313,7 @@ cmd_level() {
     fi
     [[ $new == gaming || $new == wolf || $new == sheep ]] || die "Usage: wolf level [gaming|wolf|sheep]"
     [[ $new == "$current" ]] && { echo "Already on the $new level."; return 0; }
-    if [[ $new == sheep ]]; then
+    if [[ $new == sheep && $yes != --yes && $yes != -y ]]; then
         echo "${Y}Sheep level (maximum caution):${N}"
         echo "  - Wi-Fi networks with a login page (hotels, airports, trains) won't load it."
         echo "    Switch to the wolf level, log in, then switch back."
@@ -461,10 +463,170 @@ cmd_lab() {
 }
 
 # ---------------------------------------------------------------------------------------
+# Software: wolf install / remove / search / update
+# Apps come from Flathub (sandboxed); command-line tools go into an Arch Linux box, and
+# their commands are linked into ~/.local/bin so they work in Howl like normal commands.
+# ---------------------------------------------------------------------------------------
+
+in_box() { distrobox enter "$TOOLS_BOX" -- "$@" | tr -d '\r'; }
+
+tools_box_ready() {
+    podman container exists "$TOOLS_BOX" && return 0
+    echo "Creating the Wolf tools box (Arch Linux). First time only, takes a minute or two..."
+    distrobox create --yes --name "$TOOLS_BOX" --image "$TOOLS_IMAGE" >/dev/null
+    in_box true >/dev/null # first entry sets the box up
+}
+
+tool_commands() { in_box pacman -Qlq "$1" | grep -E '^/usr/bin/[^/]+$' || true; }
+
+install_app() { # <app ID>
+    flatpak install --system --noninteractive flathub "$1"
+    ok "Installed $1. You'll find it in the app menu."
+}
+
+install_tool() { # <Arch package name>
+    local pkg=$1 bin names=()
+    tools_box_ready
+    if ! in_box sudo pacman -Syu --noconfirm --needed "$pkg"; then
+        die "'$pkg' isn't on Flathub or in Arch Linux's packages. Search with: wolf search $pkg"
+    fi
+    while read -r bin; do
+        [[ -n $bin ]] || continue
+        in_box distrobox-export --bin "$bin" --export-path "$HOME/.local/bin" >/dev/null
+        names+=("${bin##*/}")
+    done < <(tool_commands "$pkg")
+    if in_box pacman -Qlq "$pkg" | grep -q '^/usr/share/applications/.*\.desktop$'; then
+        in_box distrobox-export --app "$pkg" >/dev/null 2>&1 || true
+    fi
+    ok "Installed $pkg (from Arch Linux, in the Wolf tools box)."
+    if ((${#names[@]})); then echo "  Commands you can now run in Howl: ${names[*]}"; fi
+}
+
+cmd_install() { # <name>
+    local q=${1:-} hits=() strong=() id name remotes choice i
+    [[ -n $q ]] || die "Usage: wolf install <app or tool>   e.g. wolf install discord, wolf install htop"
+    if [[ $q == *.*.* ]]; then install_app "$q"; return; fi # a full Flatpak ID like com.discordapp.Discord
+
+    # Search Flathub. Lines look like: <app ID><TAB><name><TAB><remotes>
+    while IFS=$'\t' read -r id name remotes; do
+        [[ $id == *.* && ,$remotes, == *,flathub,* ]] || continue
+        hits+=("$id"$'\t'"$name")
+        if [[ ${name,,} == "${q,,}" || ${id,,} == *."${q,,}" ]]; then strong+=("$id"$'\t'"$name"); fi
+    done < <(flatpak search --columns=application,name,remotes "$q" 2>/dev/null)
+
+    if ((${#strong[@]} == 1)); then
+        IFS=$'\t' read -r id name <<<"${strong[0]}"
+        read -r -p "Install ${B}$name${N} ($id) from Flathub? [Y/n] " choice
+        [[ $choice == [nN]* ]] && { echo "Nothing installed."; return 0; }
+        install_app "$id"
+        return
+    fi
+    if ((${#hits[@]})); then
+        echo "Found on Flathub:"
+        for i in "${!hits[@]}"; do
+            ((i < 8)) || break
+            IFS=$'\t' read -r id name <<<"${hits[$i]}"
+            printf '  %s%d)%s %s %s(%s)%s\n' "$C" $((i + 1)) "$N" "$name" "$D" "$id" "$N"
+        done
+        printf '  %st)%s none of these: install "%s" as a command-line tool\n' "$C" "$N" "$q"
+        read -r -p "Which one? [1-$((i < 8 ? i + 1 : 8)), t, or Enter to cancel] " choice
+        case $choice in
+            "") echo "Nothing installed." ;;
+            t | T) install_tool "$q" ;;
+            *[!0-9]*) die "Not a choice: $choice" ;;
+            *)
+                ((choice >= 1 && choice <= ${#hits[@]})) || die "Not a choice: $choice"
+                IFS=$'\t' read -r id name <<<"${hits[$((choice - 1))]}"
+                install_app "$id"
+                ;;
+        esac
+        return
+    fi
+    install_tool "$q"
+}
+
+cmd_remove() { # <name>
+    local q=${1:-} id="" bin app name
+    [[ -n $q ]] || die "Usage: wolf remove <app or tool>"
+    while IFS=$'\t' read -r app name; do
+        if [[ ${app,,} == "${q,,}" || ${name,,} == "${q,,}" ]]; then id=$app; break; fi
+    done < <(flatpak list --app --columns=application,name 2>/dev/null)
+    if [[ -n $id ]]; then
+        flatpak uninstall --noninteractive "$id"
+        ok "Removed $id."
+        return
+    fi
+    if podman container exists "$TOOLS_BOX" && in_box pacman -Qq "$q" >/dev/null 2>&1; then
+        while read -r bin; do
+            [[ -n $bin ]] && in_box distrobox-export --bin "$bin" --export-path "$HOME/.local/bin" --delete >/dev/null 2>&1
+        done < <(tool_commands "$q")
+        in_box sudo pacman -Rns --noconfirm "$q" >/dev/null
+        ok "Removed $q from the Wolf tools box."
+        return
+    fi
+    die "'$q' isn't installed as an app or in the Wolf tools box. See your apps with: flatpak list --app"
+}
+
+cmd_search() { # <name>
+    local q=${1:-}
+    [[ -n $q ]] || die "Usage: wolf search <name>"
+    echo "${B}Apps on Flathub${N} (install with: wolf install <name or ID>)"
+    flatpak search --columns=name,application "$q" 2>/dev/null | head -10 | sed 's/^/  /' || true
+    echo
+    if podman container exists "$TOOLS_BOX"; then
+        echo "${B}Command-line tools from Arch Linux${N}"
+        in_box pacman -Ss "$q" | head -20 | sed 's/^/  /' || true
+    else
+        echo "${D}Command-line tools come from Arch Linux: wolf install <name> sets that up on first use.${N}"
+    fi
+}
+
+cmd_update() {
+    local t0
+    t0=$(date +%s)
+    echo "Updating the system, your apps and your boxes. This can take a few minutes..."
+    if [[ -e /usr/lib/systemd/system/uupd.service ]]; then
+        as_root systemctl start uupd.service # Universal Blue's updater, the same one `ujust update` uses
+        as_root journalctl -u uupd.service --since "@$t0" -o cat --no-pager | tail -15
+    else
+        as_root rpm-ostree upgrade
+        flatpak update --noninteractive
+        distrobox upgrade --all || true
+    fi
+    if rpm-ostree status --json | jq -e '.deployments[] | select(.staged == true)' >/dev/null 2>&1; then
+        ok "Update downloaded. ${B}Reboot to finish:${N} systemctl reboot"
+    else
+        ok "Everything is up to date."
+    fi
+}
+
+# Machine-readable state for the Wolf panel widget and Wolf Welcome (key=value lines)
+cmd_state() {
+    local uuid zone="" name="" net=offline
+    uuid=$(primary_connection) || true
+    if [[ -n $uuid ]]; then
+        zone=$(con_get "$uuid" connection.zone)
+        name=$(con_get "$uuid" connection.id)
+        case $zone in wolf) net=home ;; wolf-public) net=public ;; "") net=unset ;; *) net=custom ;; esac
+    fi
+    echo "level=$(current_level)"
+    echo "net=$net"
+    echo "net_name=$name"
+    echo "game=$([[ -e $GAME_STATE ]] && echo on || echo off)"
+    echo "score=$(/usr/bin/wolf-security-check 2>/dev/null | sed -n 's/.*Score: //p')"
+}
+
+# ---------------------------------------------------------------------------------------
 
 usage() {
     cat <<EOF
 ${B}wolf${N}: the Wolf OS control tool
+
+${B}Software${N}
+  ${C}wolf install${N} <name>              install an app (Flathub) or a command-line tool (Arch)
+  ${C}wolf remove${N} <name>               remove it again
+  ${C}wolf search${N} <name>               look for apps and tools
+  ${C}wolf update${N}                      update the system, apps and boxes
 
 ${B}Security${N}
   ${C}wolf check${N}                       how locked-down this system is
@@ -486,13 +648,13 @@ ${B}Terminal${N}
   ${C}wolf prompt${N} [on|off]             the icy terminal prompt
 
 Leave out the part in [brackets] to see the current state.
-System updates and Universal Blue's own commands: ${C}ujust update${N}, ${C}ujust${N}
+Universal Blue's own extra commands: ${C}ujust${N}
 EOF
 }
 
 case ${1:-help} in
     check | status) exec /usr/bin/wolf-security-check ;;
-    level) cmd_level "${2:-}" ;;
+    level) cmd_level "${2:-}" "${3:-}" ;;
     net | network) cmd_net "${2:-}" ;;
     kargs) cmd_kargs "${2:-}" ;;
     usbguard) cmd_usbguard "${2:-}" ;;
@@ -501,6 +663,11 @@ case ${1:-help} in
     lab) cmd_lab "${2:-}" "${3:-}" ;;
     fastfetch) user_toggle fastfetch fastfetch-off "fastfetch at the top of new terminals" "${2:-}" ;;
     prompt) user_toggle prompt prompt-off "The Wolf OS prompt" "${2:-}" ;;
+    install) cmd_install "${2:-}" ;;
+    remove | uninstall) cmd_remove "${2:-}" ;;
+    search) cmd_search "${2:-}" ;;
+    update | upgrade) cmd_update ;;
+    state) cmd_state ;;
     _classify) cmd_classify "$2" "$3" ;;
     help | -h | --help) usage ;;
     *) usage; exit 1 ;;

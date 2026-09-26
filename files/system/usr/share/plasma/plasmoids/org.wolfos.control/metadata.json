@@ -1,0 +1,18 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [{ "Name": "Wolf OS" }],
+        "Category": "System Information",
+        "Description": "Security level, network trust and Game Mode for Wolf OS",
+        "EnabledByDefault": true,
+        "FormFactors": ["desktop"],
+        "Icon": "wolf-os-logo",
+        "Id": "org.wolfos.control",
+        "License": "Apache-2.0",
+        "Name": "Wolf OS",
+        "Website": "https://github.com/vukkz/wolf-os"
+    },
+    "X-KDE-Keywords": "wolf,security,firewall,network,game mode,level",
+    "X-Plasma-API-Minimum-Version": "6.0",
+    "X-Plasma-NotificationAreaCategory": "SystemServices"
+}

@@ -607,7 +607,7 @@ cmd_state() {
     if [[ -n $uuid ]]; then
         zone=$(con_get "$uuid" connection.zone)
         name=$(con_get "$uuid" connection.id)
-        case $zone in wolf) net=home ;; wolf-public) net=public ;; "") net=unset ;; *) net=custom ;; esac
+        case $zone in wolf) net=home ;; wolf-public) net=public ;; "") net="unset" ;; *) net=custom ;; esac
     fi
     echo "level=$(current_level)"
     echo "net=$net"

@@ -258,26 +258,16 @@ level_dns() { # on | off
     as_root systemctl reload NetworkManager
 }
 
-level_kargs() { # on | off: init_on_free=1 (wipes freed memory; costs a little speed)
-    local current
-    current=" $(rpm-ostree kargs) "
-    if [[ $1 == on && $current != *" init_on_free=1 "* ]]; then
-        as_root rpm-ostree kargs --append-if-missing=init_on_free=1 >/dev/null
-        echo "${Y}•${N} Kernel setting added: reboot to finish"
-    elif [[ $1 == off && $current == *" init_on_free=1 "* ]]; then
-        as_root rpm-ostree kargs --delete-if-present=init_on_free=1 >/dev/null
-        echo "${Y}•${N} Kernel setting removed: reboot to finish"
-    fi
-}
-
 describe_levels() {
     cat <<EOF
   ${C}gaming${N}     balanced, plus: Steam Remote Play/LAN ports stay open on home networks,
              and no split-lock slowdown (fixes stutter in a few games)
   ${C}balanced${N}   the Wolf OS default: everything in SECURITY.md
   ${C}paranoid${N}   balanced, plus: encrypted DNS (Quad9), no replies to pings, io_uring and
-             SysRq off, no TCP timestamps, freed memory wiped, USBGuard on
+             SysRq off, no TCP timestamps, USBGuard on
              ${Y}Breaks Wi-Fi login pages (hotels, airports) and apps that need io_uring.${N}
+
+Switching is instant and needs no reboot. Your rollback (the previous OS version) is never touched.
 EOF
 }
 
@@ -309,14 +299,14 @@ cmd_level() {
     if [[ $new == gaming ]]; then level_steam_ports add; echo "${G}✔${N} Steam ports open on home networks"; fi
     if [[ $current == gaming ]]; then level_steam_ports remove; echo "${G}✔${N} Steam ports closed"; fi
 
+    # Levels never change kernel boot arguments: that would create a new boot entry, take a
+    # minute, need a reboot, and push the previous OS version out of the rollback slot.
     if [[ $new == paranoid ]]; then
         level_dns on && echo "${G}✔${N} Encrypted DNS on (Quad9)"
         level_usbguard on && echo "${G}✔${N} USBGuard on"
-        level_kargs on
     elif [[ $current == paranoid ]]; then
         level_dns off && echo "${G}✔${N} Encrypted DNS off (using the network's DNS again)"
         level_usbguard off
-        level_kargs off
     fi
 
     echo "$new" | as_root tee "$LEVEL_FILE" >/dev/null

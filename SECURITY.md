@@ -131,8 +131,16 @@ The files are in `files/system/usr/share/wolf-os/levels/`.
 | io_uring, a kernel I/O interface with many past exploits | On | On | Off |
 | Magic SysRq keyboard shortcuts | Sync only | Sync only | Off |
 | TCP timestamps, which reveal uptime | On | On | Off |
-| Wipe freed memory (`init_on_free=1`, needs a reboot) | | | ✔ |
 | USBGuard | Your choice | Your choice | On |
+
+Switching levels is instant and needs no reboot. **Levels never change kernel boot
+arguments.** On Wolf OS that creates a new boot entry, which takes a minute, needs a
+reboot, and pushes your previous OS version out of the rollback slot.
+
+**Extra hardening you can add by hand:** wipe freed memory, so leftover passwords and
+keys can't be read by an exploit. It costs a few percent of speed. Add it with
+`sudo rpm-ostree kargs --append-if-missing=init_on_free=1` and reboot. Remove it with
+`--delete-if-present=init_on_free=1`.
 
 **Paranoid breaks some things:**
 - Wi-Fi login pages (hotels, airports, trains) don't load, because DNS only goes to

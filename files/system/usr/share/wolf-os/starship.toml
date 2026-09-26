@@ -1,6 +1,6 @@
 # Wolf OS terminal prompt (https://starship.rs).
 # To customise it, copy this file to ~/.config/starship.toml and edit that copy.
-# To turn it off: ujust toggle-prompt
+# To turn it off: wolf prompt off
 # Only plain Unicode symbols are used, so no special "Nerd Font" is needed.
 "$schema" = "https://starship.rs/config-schema.json"
 

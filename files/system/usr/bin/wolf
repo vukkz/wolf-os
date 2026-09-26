@@ -4,7 +4,10 @@ set -euo pipefail
 
 LEVEL_FILE=/etc/wolf-os/security-level # persistent
 LEVELS=/usr/share/wolf-os/levels
+KARGS_FILE=/usr/share/wolf-os/kargs
 GAME_STATE=/run/wolf-os/game-mode # /run is cleared at reboot, like Game Mode's firewall changes
+USER_FLAGS=${XDG_CONFIG_HOME:-$HOME/.config}/wolf-os
+LAB_IMAGE=ghcr.io/vukkz/wolf-os-lab:latest
 STEAM_SERVICES=(steam-streaming steam-lan-transfer)
 UPDATE_TIMERS=(uupd.timer ublue-update.timer rpm-ostreed-automatic.timer flatpak-system-update.timer)
 
@@ -15,11 +18,14 @@ else
 fi
 
 die() { printf '%s\n' "$*" >&2; exit 1; }
+ok() { echo "${G}✔${N} $*"; }
+note() { echo "${Y}•${N} $*"; }
 as_root() { if ((EUID == 0)); then "$@"; else sudo "$@"; fi; }
 ask() { local reply; read -r -p "$1 [y/N] " reply; [[ $reply == [yY]* ]]; }
+on_off_usage() { die "Usage: wolf $1 [on|off]"; }
 
 # ---------------------------------------------------------------------------------------
-# Networks
+# Networks: wolf net
 # ---------------------------------------------------------------------------------------
 
 # UUID of the Wi-Fi or wired connection the internet goes through (VPNs and bridges ignored)
@@ -83,11 +89,11 @@ cmd_net() {
             ;;
         home | trusted)
             set_trust "$uuid" home
-            echo "${G}✔${N} '$name' is now trusted (home)."
+            ok "'$name' is now trusted (home)."
             ;;
         public | untrusted)
             set_trust "$uuid" public
-            echo "${G}✔${N} '$name' is now untrusted (public): this PC is invisible to other devices on it."
+            ok "'$name' is now untrusted (public): this PC is invisible to other devices on it."
             ;;
         *) die "Usage: wolf net [home|public]" ;;
     esac
@@ -129,7 +135,7 @@ cmd_classify() { # <uuid> <device>
 }
 
 # ---------------------------------------------------------------------------------------
-# Game Mode (temporary: everything it changes resets at reboot)
+# Game Mode: wolf game (temporary: everything it changes resets at reboot)
 # ---------------------------------------------------------------------------------------
 
 power_profile() { # get | set <name>
@@ -158,13 +164,13 @@ game_on() {
     local zone opened="" paused=() previous=""
     zone=$(game_zone)
     if [[ $zone == wolf-public ]]; then
-        echo "${Y}•${N} Public network: Steam Remote Play and LAN ports stay closed."
+        note "Public network: Steam Remote Play and LAN ports stay closed."
     else
         local args=()
         for s in "${STEAM_SERVICES[@]}"; do args+=("--add-service=$s"); done
         as_root firewall-cmd --zone="$zone" "${args[@]}" >/dev/null
         opened=$zone
-        echo "${G}✔${N} Opened Steam Remote Play and LAN game transfer (until Game Mode is off or reboot)"
+        ok "Opened Steam Remote Play and LAN game transfer (until Game Mode is off or reboot)"
     fi
     for t in "${UPDATE_TIMERS[@]}"; do
         if systemctl is-active --quiet "$t"; then
@@ -172,12 +178,12 @@ game_on() {
             paused+=("$t")
         fi
     done
-    echo "${G}✔${N} Paused automatic updates"
+    ok "Paused automatic updates"
     previous=$(power_profile get 2>/dev/null) || true
     if power_profile set performance >/dev/null 2>&1; then
-        echo "${G}✔${N} Power profile: performance"
+        ok "Power profile: performance"
     else
-        echo "${Y}•${N} This PC has no performance power profile (normal in virtual machines)"
+        note "This PC has no performance power profile (normal in virtual machines)"
     fi
     as_root mkdir -p "${GAME_STATE%/*}"
     printf 'ZONE=%q\nTIMERS=%q\nPROFILE=%q\n' "$opened" "${paused[*]}" "$previous" | as_root tee "$GAME_STATE" >/dev/null
@@ -196,10 +202,10 @@ game_off() {
             as_root firewall-cmd --permanent --zone="$ZONE" --query-service="$s" >/dev/null 2>&1 || args+=("--remove-service=$s")
         done
         ((${#args[@]} == 0)) || as_root firewall-cmd --zone="$ZONE" "${args[@]}" >/dev/null
-        echo "${G}✔${N} Closed the Steam ports again"
+        ok "Closed the Steam ports again"
     fi
     for t in $TIMERS; do as_root systemctl start "$t"; done
-    echo "${G}✔${N} Automatic updates resumed"
+    ok "Automatic updates resumed"
     [[ -n $PROFILE ]] && power_profile set "$PROFILE" >/dev/null 2>&1 || true
     as_root rm -f "$GAME_STATE"
     echo "${B}Game Mode is OFF.${N}"
@@ -214,15 +220,49 @@ cmd_game() {
             ;;
         on) game_on ;;
         off) game_off ;;
-        *) die "Usage: wolf game [on|off]" ;;
+        *) on_off_usage game ;;
     esac
 }
 
+cmd_setup() {
+    [[ ${1:-} == gaming ]] || die "Usage: wolf setup gaming"
+    echo "Installing Steam, Heroic, Lutris and ProtonUp-Qt (a few GB the first time)..."
+    flatpak install --system --noninteractive flathub \
+        com.valvesoftware.Steam com.heroicgameslauncher.hgl net.lutris.Lutris net.davidotek.pupgui2
+    local branch
+    branch=$(flatpak info --system --show-runtime com.valvesoftware.Steam | cut -d/ -f3)
+    flatpak install --system --noninteractive flathub \
+        "org.freedesktop.Platform.VulkanLayer.MangoHud//${branch}" \
+        "org.freedesktop.Platform.VulkanLayer.gamescope//${branch}" ||
+        note "Couldn't install MangoHud/gamescope for runtime ${branch}. Steam works without them."
+    cat <<EOF
+
+${B}Done.${N} You'll find them in the app menu:
+  Steam         your Steam library; Proton runs Windows games
+  Heroic        Epic Games, GOG and Amazon Prime games
+  Lutris        everything else (Battle.net, EA app, Ubisoft Connect, emulators)
+  ProtonUp-Qt   extra Proton versions (e.g. Proton-GE) that fix some games
+
+Tips:
+  - Per game in Steam (Properties > Launch Options):  MANGOHUD=1 gamemoderun %command%
+  - Before playing:  wolf game on   (Remote Play/LAN ports, pauses updates, performance mode)
+  - Check a game works on Linux first: https://www.protondb.com
+EOF
+}
+
 # ---------------------------------------------------------------------------------------
-# Security levels (persistent)
+# Security levels: wolf level (persistent)
 # ---------------------------------------------------------------------------------------
 
-current_level() { cat "$LEVEL_FILE" 2>/dev/null || echo balanced; }
+# Older Wolf OS versions called the levels balanced and paranoid
+level_name() {
+    case $1 in
+        balanced) echo wolf ;;
+        paranoid) echo sheep ;;
+        *) echo "$1" ;;
+    esac
+}
+current_level() { level_name "$(cat "$LEVEL_FILE" 2>/dev/null || echo wolf)"; }
 
 level_steam_ports() { # add | remove
     local args=() perm
@@ -233,24 +273,11 @@ level_steam_ports() { # add | remove
     done
 }
 
-level_usbguard() { # on | off
-    if [[ $1 == on ]]; then
-        systemctl is-active --quiet usbguard && return 0
-        echo "Allowing every USB device that's plugged in right now, blocking any new ones."
-        as_root sh -c 'usbguard generate-policy > /etc/usbguard/rules.conf && chmod 0600 /etc/usbguard/rules.conf'
-        as_root systemctl enable --now usbguard
-        as_root touch /etc/wolf-os/usbguard-by-level
-    elif [[ -e /etc/wolf-os/usbguard-by-level ]]; then
-        as_root systemctl disable --now usbguard
-        as_root rm -f /etc/wolf-os/usbguard-by-level
-    fi
-}
-
 level_dns() { # on | off
     if [[ $1 == on ]]; then
         as_root mkdir -p /etc/systemd/resolved.conf.d
-        as_root ln -sfn "$LEVELS/paranoid/resolved.conf" /etc/systemd/resolved.conf.d/95-wolf-level.conf
-        as_root ln -sfn "$LEVELS/paranoid/networkmanager.conf" /etc/NetworkManager/conf.d/95-wolf-level.conf
+        as_root ln -sfn "$LEVELS/sheep/resolved.conf" /etc/systemd/resolved.conf.d/95-wolf-level.conf
+        as_root ln -sfn "$LEVELS/sheep/networkmanager.conf" /etc/NetworkManager/conf.d/95-wolf-level.conf
     else
         as_root rm -f /etc/systemd/resolved.conf.d/95-wolf-level.conf /etc/NetworkManager/conf.d/95-wolf-level.conf
     fi
@@ -260,57 +287,177 @@ level_dns() { # on | off
 
 describe_levels() {
     cat <<EOF
-  ${C}gaming${N}     balanced, plus: Steam Remote Play/LAN ports stay open on home networks,
-             and no split-lock slowdown (fixes stutter in a few games)
-  ${C}balanced${N}   the Wolf OS default: everything in SECURITY.md
-  ${C}paranoid${N}   balanced, plus: encrypted DNS (Quad9), no replies to pings, io_uring and
-             SysRq off, no TCP timestamps, USBGuard on
-             ${Y}Breaks Wi-Fi login pages (hotels, airports) and apps that need io_uring.${N}
+  ${C}gaming${N}   the wolf level, plus: Steam Remote Play/LAN ports stay open on home networks,
+           and no split-lock slowdown (fixes stutter in a few games)
+  ${C}wolf${N}     the default: confident, with everything in SECURITY.md
+  ${C}sheep${N}    maximum caution: the wolf level, plus encrypted DNS (Quad9), no replies to pings,
+           io_uring and SysRq off, no TCP timestamps, USBGuard on
+           ${Y}Breaks Wi-Fi login pages (hotels, airports) and apps that need io_uring.${N}
 
 Switching is instant and needs no reboot. Your rollback (the previous OS version) is never touched.
 EOF
 }
 
 cmd_level() {
-    local current new=${1:-}
+    local current new
     current=$(current_level)
+    new=$(level_name "${1:-}")
     if [[ -z $new ]]; then
         printf '%sSecurity level:%s %s\n\n' "$B" "$N" "$current"
         describe_levels
         echo
-        echo "Change it with: wolf level gaming|balanced|paranoid"
+        echo "Change it with: wolf level gaming|wolf|sheep"
         return 0
     fi
-    [[ $new == gaming || $new == balanced || $new == paranoid ]] || die "Usage: wolf level [gaming|balanced|paranoid]"
-    [[ $new == "$current" ]] && { echo "Already on $new."; return 0; }
-    if [[ $new == paranoid ]]; then
-        echo "${Y}Paranoid mode:${N}"
+    [[ $new == gaming || $new == wolf || $new == sheep ]] || die "Usage: wolf level [gaming|wolf|sheep]"
+    [[ $new == "$current" ]] && { echo "Already on the $new level."; return 0; }
+    if [[ $new == sheep ]]; then
+        echo "${Y}Sheep level (maximum caution):${N}"
         echo "  - Wi-Fi networks with a login page (hotels, airports, trains) won't load it."
-        echo "    Switch to balanced, log in, then switch back."
+        echo "    Switch to the wolf level, log in, then switch back."
         echo "  - A few apps that need io_uring may fail. New USB devices are blocked until allowed."
-        ask "Turn on paranoid?" || { echo "Nothing changed."; return 0; }
+        ask "Switch to sheep?" || { echo "Nothing changed."; return 0; }
     fi
 
     as_root mkdir -p /etc/wolf-os
     as_root ln -sfn "$LEVELS/$new/sysctl.conf" /etc/sysctl.d/95-wolf-level.conf
     as_root systemctl restart systemd-sysctl
-    echo "${G}✔${N} Kernel settings for $new applied"
+    ok "Kernel settings for the $new level applied"
 
-    if [[ $new == gaming ]]; then level_steam_ports add; echo "${G}✔${N} Steam ports open on home networks"; fi
-    if [[ $current == gaming ]]; then level_steam_ports remove; echo "${G}✔${N} Steam ports closed"; fi
+    if [[ $new == gaming ]]; then level_steam_ports add && ok "Steam ports open on home networks"; fi
+    if [[ $current == gaming ]]; then level_steam_ports remove && ok "Steam ports closed"; fi
 
     # Levels never change kernel boot arguments: that would create a new boot entry, take a
     # minute, need a reboot, and push the previous OS version out of the rollback slot.
-    if [[ $new == paranoid ]]; then
-        level_dns on && echo "${G}✔${N} Encrypted DNS on (Quad9)"
-        level_usbguard on && echo "${G}✔${N} USBGuard on"
-    elif [[ $current == paranoid ]]; then
-        level_dns off && echo "${G}✔${N} Encrypted DNS off (using the network's DNS again)"
-        level_usbguard off
+    if [[ $new == sheep ]]; then
+        level_dns on && ok "Encrypted DNS on (Quad9)"
+        usbguard_on by-level && ok "USBGuard on"
+    elif [[ $current == sheep ]]; then
+        level_dns off && ok "Encrypted DNS off (using the network's DNS again)"
+        [[ -e /etc/wolf-os/usbguard-by-level ]] && usbguard_off && ok "USBGuard off"
     fi
 
     echo "$new" | as_root tee "$LEVEL_FILE" >/dev/null
     echo "${B}Security level is now: $new${N}"
+}
+
+# ---------------------------------------------------------------------------------------
+# USBGuard, kernel boot arguments
+# ---------------------------------------------------------------------------------------
+
+usbguard_on() { # [by-level]
+    if ! systemctl is-active --quiet usbguard; then
+        echo "Allowing every USB device that's plugged in right now, blocking any new ones."
+        as_root sh -c 'usbguard generate-policy > /etc/usbguard/rules.conf && chmod 0600 /etc/usbguard/rules.conf'
+        as_root systemctl enable --now usbguard
+        if [[ ${1:-} == by-level ]]; then as_root touch /etc/wolf-os/usbguard-by-level; fi
+    fi
+}
+usbguard_off() {
+    as_root systemctl disable --now usbguard
+    as_root rm -f /etc/wolf-os/usbguard-by-level
+}
+
+cmd_usbguard() {
+    case ${1:-} in
+        "")
+            if systemctl is-active --quiet usbguard; then echo "USBGuard is ON: USB devices plugged in later are blocked until allowed."; else echo "USBGuard is OFF: all USB devices are allowed."; fi
+            echo "${D}Allow a blocked device: sudo usbguard list-devices --blocked, then sudo usbguard allow-device <number> -p${N}"
+            ;;
+        on)
+            usbguard_on
+            ok "USBGuard is ON. To allow a new device:"
+            echo "  sudo usbguard list-devices --blocked"
+            echo "  sudo usbguard allow-device <number> -p    (-p remembers it)"
+            ;;
+        off) usbguard_off && ok "USBGuard is OFF. All USB devices are allowed." ;;
+        *) on_off_usage usbguard ;;
+    esac
+}
+
+cmd_kargs() {
+    local args=() current arg action
+    current=" $(rpm-ostree kargs) " # what the next boot will use
+    case ${1:-} in
+        "")
+            local missing=0 cmdline
+            cmdline=" $(</proc/cmdline) "
+            while read -r arg; do [[ -z $arg || $cmdline == *" $arg "* ]] || missing=1; done <"$KARGS_FILE"
+            if ((missing)); then echo "Kernel hardening boot arguments: OFF"; else echo "Kernel hardening boot arguments: ON"; fi
+            echo "${D}$(tr '\n' ' ' <"$KARGS_FILE")${N}"
+            echo "${D}Changing them creates a new boot entry and needs a reboot.${N}"
+            return 0
+            ;;
+        on) action=--append-if-missing ;;
+        off) action=--delete-if-present ;;
+        *) on_off_usage kargs ;;
+    esac
+    while read -r arg; do
+        [[ -z $arg ]] && continue
+        if [[ $1 == on && $current != *" $arg "* ]] || [[ $1 == off && $current == *" $arg "* ]]; then
+            args+=("$action=$arg")
+        fi
+    done <"$KARGS_FILE"
+    if ((${#args[@]} == 0)); then
+        echo "Already $1. If you haven't rebooted since, reboot now."
+        return 0
+    fi
+    as_root rpm-ostree kargs "${args[@]}"
+    ok "Kernel hardening boot arguments turned $1. Reboot to apply."
+}
+
+# ---------------------------------------------------------------------------------------
+# Terminal: fastfetch and prompt (per user)
+# ---------------------------------------------------------------------------------------
+
+user_toggle() { # <name> <flag file> <what it is> [on|off]
+    local name=$1 flag="$USER_FLAGS/$2" what=$3
+    case ${4:-} in
+        "") if [[ -e $flag ]]; then echo "$what is OFF (turn on: wolf $name on)"; else echo "$what is ON (turn off: wolf $name off)"; fi ;;
+        on) rm -f "$flag" && ok "$what is ON. Open a new terminal to see it." ;;
+        off) mkdir -p "$USER_FLAGS" && touch "$flag" && ok "$what is OFF for new terminals." ;;
+        *) on_off_usage "$name" ;;
+    esac
+}
+
+# ---------------------------------------------------------------------------------------
+# Wolf Lab: Kali tools in a container
+# ---------------------------------------------------------------------------------------
+
+lab_enter() { # [root]
+    local name=wolf-lab root=() podman=(podman) app=burpsuite
+    if [[ ${1:-} == root ]]; then
+        name=wolf-lab-root root=(--root) podman=(sudo podman) app=wireshark
+        echo "Root lab: tools here get raw access to your network hardware."
+        echo "Use it only when a tool needs it, and leave it when you're done."
+    fi
+    # The lab gets its own home folder, so tool configs, histories and loot stay out of your real one
+    local lab_home="$HOME/WolfLab/$name"
+    if ! "${podman[@]}" container exists "$name"; then
+        echo "Creating $name from $LAB_IMAGE (the first time downloads a few GB)..."
+        mkdir -p "$lab_home"
+        distrobox create "${root[@]}" --yes --pull --name "$name" --image "$LAB_IMAGE" --home "$lab_home"
+        if distrobox enter "${root[@]}" "$name" -- distrobox-export --app "$app" >/dev/null 2>&1; then
+            ok "Added $app to your app menu."
+        else
+            note "Couldn't add $app to the app menu. It still works: run '$app' inside the lab."
+        fi
+    fi
+    # --no-workdir: start in the lab's home, not whatever folder we were run from
+    exec distrobox enter "${root[@]}" --no-workdir "$name"
+}
+
+lab_reset() { # [root]
+    if [[ ${1:-} == root ]]; then distrobox rm --root --force wolf-lab-root; else distrobox rm --force wolf-lab; fi
+    ok "Removed. Files in ~/WolfLab were kept. Run 'wolf lab' to create a fresh one."
+}
+
+cmd_lab() {
+    case ${1:-} in
+        "" | root) lab_enter "${1:-}" ;;
+        reset) lab_reset "${2:-}" ;;
+        *) die "Usage: wolf lab [root] | wolf lab reset [root]" ;;
+    esac
 }
 
 # ---------------------------------------------------------------------------------------
@@ -319,21 +466,42 @@ usage() {
     cat <<EOF
 ${B}wolf${N}: the Wolf OS control tool
 
-  ${C}wolf check${N}                               how locked-down this system is
-  ${C}wolf net${N} [home|public]                   trust level of the network you're on
-  ${C}wolf game${N} [on|off]                       Game Mode (temporary, resets at reboot)
-  ${C}wolf level${N} [gaming|balanced|paranoid]    security level (stays until you change it)
+${B}Security${N}
+  ${C}wolf check${N}                       how locked-down this system is
+  ${C}wolf level${N} [gaming|wolf|sheep]   security level (stays until you change it)
+  ${C}wolf net${N} [home|public]           trust level of the network you're on
+  ${C}wolf kargs${N} [on|off]              kernel hardening boot arguments (needs a reboot)
+  ${C}wolf usbguard${N} [on|off]           block USB devices plugged in later
 
-Run a command without the part in [brackets] to see its current state.
+${B}Gaming${N}
+  ${C}wolf setup gaming${N}                install Steam, Heroic, Lutris, ProtonUp-Qt, MangoHud
+  ${C}wolf game${N} [on|off]               Game Mode (temporary, resets at reboot)
+
+${B}Hacking lab${N}
+  ${C}wolf lab${N} [root]                  enter the Wolf Lab (Kali tools in a container)
+  ${C}wolf lab reset${N} [root]            start the lab fresh from the newest image
+
+${B}Terminal${N}
+  ${C}wolf fastfetch${N} [on|off]          the wolf at the top of new terminals
+  ${C}wolf prompt${N} [on|off]             the icy terminal prompt
+
+Leave out the part in [brackets] to see the current state.
+System updates and Universal Blue's own commands: ${C}ujust update${N}, ${C}ujust${N}
 EOF
 }
 
 case ${1:-help} in
     check | status) exec /usr/bin/wolf-security-check ;;
-    net | network) shift; cmd_net "$@" ;;
-    game) shift; cmd_game "$@" ;;
-    level) shift; cmd_level "$@" ;;
-    _classify) shift; cmd_classify "$@" ;;
+    level) cmd_level "${2:-}" ;;
+    net | network) cmd_net "${2:-}" ;;
+    kargs) cmd_kargs "${2:-}" ;;
+    usbguard) cmd_usbguard "${2:-}" ;;
+    setup) cmd_setup "${2:-}" ;;
+    game) cmd_game "${2:-}" ;;
+    lab) cmd_lab "${2:-}" "${3:-}" ;;
+    fastfetch) user_toggle fastfetch fastfetch-off "fastfetch at the top of new terminals" "${2:-}" ;;
+    prompt) user_toggle prompt prompt-off "The Wolf OS prompt" "${2:-}" ;;
+    _classify) cmd_classify "$2" "$3" ;;
     help | -h | --help) usage ;;
     *) usage; exit 1 ;;
 esac

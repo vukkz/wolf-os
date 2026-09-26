@@ -1,0 +1,19 @@
+# Tab completion for the `wolf` command
+_wolf() {
+    local cur=${COMP_WORDS[COMP_CWORD]} words=""
+    if ((COMP_CWORD == 1)); then
+        words="check level net kargs usbguard setup game lab fastfetch prompt help"
+    elif ((COMP_CWORD == 2)); then
+        case ${COMP_WORDS[1]} in
+            level) words="gaming wolf sheep" ;;
+            net) words="home public" ;;
+            kargs | usbguard | game | fastfetch | prompt) words="on off" ;;
+            setup) words="gaming" ;;
+            lab) words="root reset" ;;
+        esac
+    elif ((COMP_CWORD == 3)) && [[ ${COMP_WORDS[1]} == lab && ${COMP_WORDS[2]} == reset ]]; then
+        words="root"
+    fi
+    mapfile -t COMPREPLY < <(compgen -W "$words" -- "$cur")
+}
+complete -F _wolf wolf

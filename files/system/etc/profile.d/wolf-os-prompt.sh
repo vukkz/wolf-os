@@ -1,6 +1,6 @@
 # shellcheck shell=sh
 # Wolf OS terminal prompt (starship), for interactive bash shells.
-# Turn it off with `ujust toggle-prompt`. Your own ~/.config/starship.toml is used if you have one.
+# Turn it off with `wolf prompt off`. Your own ~/.config/starship.toml is used if you have one.
 if [ -n "${BASH_VERSION:-}" ] && [ "${TERM:-dumb}" != dumb ] && command -v starship >/dev/null 2>&1 &&
     [ ! -e "${XDG_CONFIG_HOME:-$HOME/.config}/wolf-os/prompt-off" ]; then
     case $- in

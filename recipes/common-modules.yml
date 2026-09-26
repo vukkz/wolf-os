@@ -47,10 +47,7 @@ modules:
       - firewall.sh
       - look.sh
       - fix-permissions.sh
-
-  - type: justfiles
-    include:
-      - wolf.just
+      - compat.sh
 
   # Rebuild the boot image so it contains the Wolf OS boot screen and the module
   # blacklist. Keep this near the end so it includes everything above.

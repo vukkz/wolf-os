@@ -2,7 +2,7 @@
 
 Wolf OS aims for **hardening that doesn't get in your way**. Every setting here is on
 by default unless marked *opt-in*. Each one lists what it protects against, what it
-can break, and how to undo it. Run `ujust security-check` to see the live status.
+can break, and how to undo it. Run `wolf check` to see the live status.
 
 Base: Fedora Atomic 44 (KDE Plasma) via Universal Blue. That already gives you
 SELinux enforcing, a read-only `/usr`, atomic updates with rollback, and sandboxed
@@ -52,7 +52,7 @@ To change one: put the same key in `/etc/sysctl.d/99-local.conf`, then run `sudo
 - `rp_filter` stays at systemd's "loose" mode, because strict mode breaks many VPNs.
 - `io_uring` stays enabled, because some apps and games need it.
 
-## Kernel boot arguments: `ujust harden-kargs` (*run once*)
+## Kernel boot arguments: `wolf kargs on` (*run once*)
 
 `slab_nomerge init_on_alloc=1 page_alloc.shuffle=1 randomize_kstack_offset=on vsyscall=none`
 (the list is in `files/system/usr/share/wolf-os/kargs`)
@@ -62,8 +62,8 @@ amount of performance and memory.
 - `vsyscall=none` breaks only ancient (pre-2012) Linux programs. Windows games through Proton aren't affected.
 - `init_on_free=1` was left out on purpose because of its bigger performance cost.
 
-They're a `ujust` command rather than built into the image, because updates
-through `rpm-ostree` don't apply kernel arguments from the image. Undo with `ujust unharden-kargs`.
+They're a `wolf` command rather than built into the image, because updates
+through `rpm-ostree` don't apply kernel arguments from the image. Undo with `wolf kargs off`.
 
 ## Blocked kernel modules: `files/system/usr/lib/modprobe.d/wolf-blacklist.conf`
 
@@ -81,7 +81,7 @@ HFS+ (Mac drives), UDF (discs) and exFAT still work.
 - Each Wi-Fi network sees a different MAC address that stays the same for that network. Networks can't track you across locations, but captive portals and router reservations still work.
 - Temporary IPv6 addresses are preferred for outgoing connections.
 
-## USBGuard (*opt-in*): `ujust toggle-usbguard`
+## USBGuard (*opt-in*): `wolf usbguard on`
 
 When it's on, only the USB devices plugged in when you turned it on are allowed.
 A malicious USB stick pretending to be a keyboard gets blocked. It's off by default
@@ -121,7 +121,7 @@ A temporary mode for playing. **Everything it changes resets at reboot or with `
 One switch that moves a bundle of settings together. It stays until you change it.
 The files are in `files/system/usr/share/wolf-os/levels/`.
 
-| | gaming | balanced (default) | paranoid |
+| | gaming | wolf (default) | sheep (maximum caution) |
 |---|---|---|---|
 | Everything above in this file | ✔ | ✔ | ✔ |
 | Steam Remote Play/LAN ports on home networks | Always open | Only in Game Mode | Only in Game Mode |
@@ -142,21 +142,21 @@ keys can't be read by an exploit. It costs a few percent of speed. Add it with
 `sudo rpm-ostree kargs --append-if-missing=init_on_free=1` and reboot. Remove it with
 `--delete-if-present=init_on_free=1`.
 
-**Paranoid breaks some things:**
+**Sheep breaks some things:**
 - Wi-Fi login pages (hotels, airports, trains) don't load, because DNS only goes to
-  Quad9. Switch to `balanced`, log in, then switch back.
+  Quad9. Switch to `wolf level wolf`, log in, then switch back.
 - A few apps that use io_uring can fail.
 - Split-lock mitigation only exists on CPUs that detect split locks (mostly Intel).
   On other CPUs, that setting does nothing.
 
-## Wolf Lab: `ujust lab`
+## Wolf Lab: `wolf lab`
 
 The Kali tools live in a container (`lab/Containerfile`), not on the host. Here's
 exactly what that does and doesn't protect.
 
 **What it gives you:**
 - No attack tools, and none of their thousands of dependencies, installed on the host system.
-- Tools run as your user, not root. Only `ujust lab root` gets raw network access.
+- Tools run as your user, not root. Only `wolf lab root` gets raw network access.
 - The lab has its own home folder (`~/WolfLab`), so tool configs and loot stay separate.
 - The lab image is rebuilt weekly and signed with the same key as the OS.
 

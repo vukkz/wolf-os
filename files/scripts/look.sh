@@ -29,6 +29,12 @@ done
 # The desktop, login screen and lock screen all default to /usr/share/wallpapers/Fedora
 ln -sfn WolfOS-Night /usr/share/wallpapers/Fedora
 
+# --- The terminal is called Howl in the app menu and search ---------------------------
+# (The window title still ends in "Konsole": that name is compiled into the program.)
+konsole=/usr/share/applications/org.kde.konsole.desktop
+sed -i -e 's/^Name=Konsole$/Name=Howl/' -e '/^Name\[/d' -e '/^Keywords=/ s/$/konsole;howl;/' "$konsole"
+grep -q '^Name=Howl$' "$konsole" # fail the build if Konsole's file ever changes format
+
 # --- Boot screen (Plymouth). The initramfs module later bakes it into the boot image ----
 theme=/usr/share/plymouth/themes/wolf-os
 cp /usr/share/plymouth/themes/spinner/*.png "$theme/" # spinner, password box and lock icons

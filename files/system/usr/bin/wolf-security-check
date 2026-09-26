@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # wolf-security-check: shows how locked-down this Wolf OS install is.
-# Read-only: it never changes anything. Run it with `ujust security-check`.
+# Read-only: it never changes anything. Run it with `wolf check`.
 
 set -uo pipefail
 
@@ -102,7 +102,7 @@ if ((${#missing[@]} == 0)); then
     pass "Kernel boot args" "hardened"
 else
     fail "Kernel boot args" "missing: ${missing[*]}"
-    hint "ujust harden-kargs (then reboot)"
+    hint "wolf kargs on (then reboot)"
 fi
 
 # --- Hacking tools stay in the lab -----------------------------------------------
@@ -114,7 +114,7 @@ if ((${#found[@]} == 0)); then
     pass "Host stays clean" "no attack tools outside the lab"
 else
     fail "Host stays clean" "found on the host: ${found[*]}"
-    hint "use them from 'ujust lab' instead"
+    hint "use them from 'wolf lab' instead"
 fi
 
 # --- Automatic updates ---------------------------------------------------------
@@ -143,7 +143,9 @@ if jq -e '.deployments[]? | select(.staged == true)' <<<"$status_json" >/dev/nul
 fi
 
 # --- Optional extras -----------------------------------------------------------
-opt_off "Security level" "$(cat /etc/wolf-os/security-level 2>/dev/null || echo balanced) (change: wolf level)"
+level=$(cat /etc/wolf-os/security-level 2>/dev/null || echo wolf)
+case $level in balanced) level=wolf ;; paranoid) level=sheep ;; esac # names used by older versions
+opt_off "Security level" "$level (change: wolf level)"
 
 net_zone=""
 while IFS=: read -r _ type device; do
@@ -165,7 +167,7 @@ fi
 if systemctl is-active --quiet usbguard; then
     opt_on "USBGuard" "on, new USB devices are blocked until allowed"
 else
-    opt_off "USBGuard" "off (optional: ujust toggle-usbguard)"
+    opt_off "USBGuard" "off (optional: wolf usbguard on)"
 fi
 
 # --- Score -----------------------------------------------------------------------

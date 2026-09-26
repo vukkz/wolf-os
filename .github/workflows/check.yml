@@ -13,7 +13,7 @@ jobs:
     name: Lint scripts
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Shell scripts pass shellcheck
         run: shellcheck -S warning files/scripts/*.sh files/system/usr/bin/* files/system/usr/libexec/* files/system/etc/profile.d/*.sh files/system/usr/lib/NetworkManager/dispatcher.d/*
